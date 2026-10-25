@@ -5324,7 +5324,11 @@ function loadPeerJS() {
    STUN findet die öffentliche Adresse hinter dem Router. Klappt keine direkte Verbindung (z. B. Mobilfunk,
    strenge Firewalls), läuft sie über einen TURN-Relay. Die TURN-Server von PeerJS sind oft nicht erreichbar,
    deshalb kann ein eigener Metered-Zugang eingetragen werden (im Spiel, per #turn=app:key oder hier fest). */
-const METERED_APP = 'aoe-burg', METERED_KEY = 'JyCFAnseTQVVAsSSfv8mQ_eCE9trTfH36QjJ3vnLWk9Yb_om'; // Metered-Zugang des Projekts (für den Browser gedacht)
+const METERED_APP = '', METERED_KEY = '';
+// Alternativ feste TURN-Zugangsdaten (Metered-Dashboard → TURN Server → Credentials: Username/Password), ohne Web-Abfrage
+const METERED_USER = '2e6523a93d1d7b1af3eb83a9', METERED_PASS = 'P0b0hQfZPRrQzVFV'; // TURN-Zugang des Projekts (aoe-burg)
+const METERED_STATIC = ['turn:standard.relay.metered.ca:80', 'turn:standard.relay.metered.ca:80?transport=tcp',
+  'turn:standard.relay.metered.ca:443', 'turns:standard.relay.metered.ca:443?transport=tcp'];
 const STUN_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
 const PEERJS_TURN = { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' };
 function turnConfig() {
@@ -5337,15 +5341,16 @@ function turnConfig() {
 // ICE-Server einmal laden (Metered liefert Zugangsdaten über eine Web-Schnittstelle)
 async function netLoadIce(force) {
   if (NET.ice && !force) return NET.ice;
-  const list = STUN_SERVERS.slice(); let relay = 'peerjs';
+  const list = STUN_SERVERS.slice(); let relay = 'peerjs'; NET.iceErr = '';
+  if (METERED_USER && METERED_PASS) { list.push({ urls: METERED_STATIC, username: METERED_USER, credential: METERED_PASS }); relay = 'metered'; }
   const tc = turnConfig();
-  if (tc) {
+  if (tc && relay !== 'metered') {
     try {
       const r = await fetch(`https://${tc.app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(tc.key)}`);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const servers = await r.json();
       if (Array.isArray(servers) && servers.length) { list.push(...servers); relay = 'metered'; }
-    } catch (e) { console.warn('Metered-TURN nicht verfügbar:', e); relay = 'metered-error'; }
+    } catch (e) { console.warn('Metered-TURN nicht verfügbar:', e); relay = 'metered-error'; NET.iceErr = e.message || String(e); }
   }
   list.push(PEERJS_TURN);
   NET.ice = { iceServers: list, relay };
@@ -5371,8 +5376,8 @@ function netTestIce(config, ms) {
 }
 function netTestText(f, relay) {
   const ok = b => b ? '✓' : '✗';
-  let txt = `Netzwerktest: lokal ${ok(f.host)} · öffentliche Adresse (STUN) ${ok(f.srflx)} · Relay-Server (TURN) ${ok(f.relay)}`;
-  if (!f.relay) txt += relay === 'metered-error' ? ' – der eingetragene Metered-Zugang funktioniert nicht (App-Name/API-Key prüfen).'
+  let txt = `Netzwerktest: lokal ${ok(f.host)} · öffentliche Adresse (STUN) ${ok(f.srflx)} · Relay-Server (TURN) ${ok(f.relay)} · Metered ${relay === 'metered' ? '✓' : relay === 'metered-error' ? '✗' : '–'}`;
+  if (!f.relay) txt += relay === 'metered-error' ? ` – der eingetragene Metered-Zugang funktioniert nicht (${NET.iceErr || 'Fehler'}; App-Name/API-Key prüfen).`
     : relay === 'peerjs' ? ' – es ist kein funktionierender Relay-Server erreichbar. Unter „Verbindungsprobleme?“ einen kostenlosen Metered-Zugang eintragen.'
     : ' – Relay-Server nicht erreichbar (Firewall?).';
   else if (relay === 'metered') txt += ' – Relay über Metered ist bereit.';
@@ -5505,7 +5510,7 @@ async function netJoin() {
   mpStatus('Verbinde …');
   try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
   await netLoadIce();
-  NET.role = 'guest'; NET.me = 1; NET.code = code;
+  NET.role = 'guest'; NET.me = 1; NET.code = code; NET.lastErr = null;
   netGuestPeer(() => {
     mpStatus('Trete Spiel ' + code + ' bei …');
     const conn = NET.peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
@@ -5530,7 +5535,7 @@ function netIncoming(conn) {
 }
 function netAttach(conn) {
   if (!NET.conn) NET.conn = conn;
-  conn.on('open', () => { conn.send(netHello()); if (NET.conn === conn) netStartPing(); });
+  conn.on('open', () => { conn.everOpen = true; conn.send(netHello()); if (NET.conn === conn) netStartPing(); });
   conn.on('data', m => {
     if (conn !== NET.conn) {
       // neue Verbindung, bevor die alte als abgebrochen erkannt wurde: übernehmen, wenn es derselbe Mitspieler ist
@@ -5540,8 +5545,8 @@ function netAttach(conn) {
     }
     netOnData(m);
   });
-  conn.on('close', () => { if (NET.conn === conn) netLost(); });
-  conn.on('error', () => { if (NET.conn === conn) netLost(); });
+  conn.on('close', () => { if (NET.conn === conn) netLost(conn); });
+  conn.on('error', e => { NET.lastErr = e; if (NET.conn === conn) netLost(conn); });
 }
 function netHello() {
   const live = !!(running && G && G.net && !G.over && NET.ls), save = mpSaveMeta();
@@ -5561,7 +5566,10 @@ function netStartPing() {
   }, 1000);
   netSend({ k: 'ping', ts: performance.now() });
 }
-function netLost() {
+function netLost(conn) {
+  // Gast: Verbindungsaufbau ist gescheitert, bevor die Verbindung je offen war (meist NAT/Firewall)
+  const neverOpened = conn && !conn.everOpen && NET.role === 'guest' && !running;
+  const st = conn && conn.peerConnection ? conn.peerConnection.iceConnectionState : '?';
   NET.conn = null; NET.ready = false; NET.rx = null;
   clearInterval(NET.pingT); NET.pingT = null;
   if (running && G && G.net && !G.over && NET.ls) { netBeginRecon(); return; }
@@ -5571,7 +5579,13 @@ function netLost() {
     return;
   }
   netClose(false);
-  if (!$('mpScreen').classList.contains('hidden')) { mpStatus('Verbindung zum Mitspieler getrennt.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
+  if (!$('mpScreen').classList.contains('hidden')) {
+    $('mpLobby').classList.add('hidden'); setMPBusy(false);
+    if (neverOpened) {
+      const err = NET.lastErr ? ' (' + (NET.lastErr.type || NET.lastErr.message || NET.lastErr) + ', ICE: ' + st + ')' : ' (ICE: ' + st + ')';
+      netShowTest('Verbindungsaufbau zum Ersteller gescheitert' + err + '. Bitte beide „Verbindung testen“ drücken und das Ergebnis vergleichen.');
+    } else mpStatus('Verbindung zum Mitspieler getrennt.', true);
+  }
 }
 
 /* ---------- Kurze Abbrüche: anhalten, neu verbinden, Befehle nachholen ----------

@@ -32,7 +32,7 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 - Sollten die Spielstände doch einmal auseinanderlaufen, überträgt der Ersteller automatisch seinen Stand.
 
 **Hinweise:**
-- **Keine Verbindung über das Internet?** Oft fehlt ein Relay-Server (TURN), etwa im Mobilfunknetz oder hinter strengen Routern. Im Mehrspieler-Menü unter „Verbindungsprobleme?“ zeigt **Verbindung testen**, welche Wege funktionieren. Einen kostenlosen Relay gibt es bei [Metered Open Relay](https://www.metered.ca/tools/openrelay/) (20 GB/Monat): Konto anlegen und App-Name und API-Key dort eintragen. Es reicht, wenn der Ersteller das tut, denn der Einladungslink nimmt den Zugang mit. Fest einbauen lässt er sich über `METERED_APP`/`METERED_KEY` in `index.html`.
+- **Keine Verbindung über das Internet?** Oft fehlt ein Relay-Server (TURN), etwa im Mobilfunknetz oder hinter strengen Routern. Im Mehrspieler-Menü unter „Verbindungsprobleme?“ zeigt **Verbindung testen**, welche Wege funktionieren. Einen kostenlosen Relay gibt es bei [Metered Open Relay](https://www.metered.ca/tools/openrelay/) (20 GB/Monat): Konto anlegen und App-Name und API-Key dort eintragen. Es reicht, wenn der Ersteller das tut, denn der Einladungslink nimmt den Zugang mit. Fest eingebaut ist ein Metered-Zugang des Projekts (`METERED_USER`/`METERED_PASS` in `index.html`).
 - Die drei Speicherplätze gibt es nur im Einzelspieler; im Mehrspieler gibt es einen automatischen Zwischenstand.
 - Pause (Leertaste/P) gilt für beide. **Aufgeben & Hauptmenü** beendet das Spiel; der Mitspieler gewinnt.
 - Wechselt ein Spieler den Tab, hält der Browser das Spiel an; der Mitspieler sieht dann „Warte auf Mitspieler …“.

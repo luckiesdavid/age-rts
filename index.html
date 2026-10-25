@@ -168,6 +168,7 @@ html, body {
 .panel h3::before, .panel h3::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #a8854c); }
 .panel h3::after { background: linear-gradient(90deg, #a8854c, transparent); }
 .diffs { display: flex; gap: 10px; justify-content: center; }
+#mapChoice { flex-wrap: wrap; } #mapChoice .diff { flex: 1 1 22%; }
 .diff {
   position: relative; flex: 1; min-width: 0; padding: 12px 8px 11px; cursor: pointer; text-align: center; color: var(--ink);
   font: 700 15px/1.2 Cinzel, Georgia, serif; letter-spacing: .03em;
@@ -345,6 +346,7 @@ body.touch .touchKeys { display: block; }
   .panel h3 { margin: 10px 0 6px; font-size: 12px; }
   .diff { padding: 7px 4px; font-size: 12.5px; letter-spacing: 0; }
   .diff small { font-size: 11px; margin-top: 2px; }
+  #mapChoice .diff { padding: 7px 2px; font-size: 11px; }
   .bigbtn { margin-top: 12px; padding: 10px 36px; font-size: 16px; }
   .bigbtn.alt { margin-top: 8px; padding: 8px 18px; font-size: 13px; }
   .menuList { gap: 7px; } .menuList .bigbtn { padding: 9px 14px; }
@@ -393,6 +395,7 @@ body.touch .touchKeys { display: block; }
   .panel h1 { font-size: 36px; letter-spacing: .08em; }
   .panel h1.sm { font-size: 26px; }
   .diffs { gap: 6px; }
+  #mapChoice .diff { flex-basis: 30%; }
   .diff { padding: 10px 3px; font-size: 11.5px; letter-spacing: 0; }
   .diff small { font-size: 11px; }
   .keys { columns: 1; }
@@ -462,6 +465,10 @@ body.touch .touchKeys { display: block; }
       <button class="diff" data-m="desert">Wüste<small>Oasen, wenig Holz, mehr Gold</small></button>
       <button class="diff sel" data-m="balanced">Ausgeglichen<small>Wiesen, Wälder und Seen</small></button>
       <button class="diff" data-m="forest">Waldland<small>dichte Wälder, enge Wege</small></button>
+      <button class="diff" data-m="river">Flusstal<small>Fluss mit drei Furten</small></button>
+      <button class="diff" data-m="highland">Hochland<small>Felsketten, Pässe, viel Stein</small></button>
+      <button class="diff" data-m="steppe">Steppe<small>offen, wenig Holz, viel Wild</small></button>
+      <button class="diff" data-m="winter">Winterland<small>Nadelwald, mehr Gold, kaum Beeren</small></button>
     </div>
     <div class="row">Karten-Seed: <input id="seedInput" type="text" placeholder="zufällig"></div>
     </div>
@@ -625,7 +632,7 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '2.2';
+const GAME_VERSION = '2.3';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -793,10 +800,16 @@ const TECHS = {
 
 // Schwierigkeitsgrade der KI
 // Kartentypen: Waldschwelle (niedriger = mehr Wald), Seen, Felsen, Zusatzgold
+// optional: edge (Bäume am Rand), river, ridges (Felsketten), extraStone, herds (Wildherden), berries,
+// bankBerries, tree (Baum-Variante), connect (abgeschnittene Taschen freiräumen), pal (Farben, nur Optik)
 const MAPS = {
   balanced: { name: 'Ausgeglichen', forest: 0.6, lakes: 1, rocks: 4, extraGold: 0 },
   forest: { name: 'Waldland', forest: 0.48, lakes: 1, rocks: 2, extraGold: 0 },
-  desert: { name: 'Wüste', forest: 0.78, lakes: 0.55, rocks: 9, extraGold: 1, desert: true },
+  desert: { name: 'Wüste', forest: 0.78, lakes: 0.55, rocks: 9, extraGold: 1, desert: true, pal: 'desert' },
+  river: { name: 'Flusstal', forest: 0.63, lakes: 0, rocks: 3, extraGold: 0, river: true, bankBerries: true, connect: true },
+  highland: { name: 'Hochland', forest: 0.66, lakes: 0.6, rocks: 3, extraGold: 0, ridges: 8, extraStone: 2, connect: true },
+  steppe: { name: 'Steppe', forest: 0.82, lakes: 0.6, rocks: 2, extraGold: 0, edge: 0.25, herds: 4, connect: true, pal: 'steppe' },
+  winter: { name: 'Winterland', forest: 0.55, lakes: 1.2, rocks: 5, extraGold: 1, berries: 4, herds: 2, tree: 4, connect: true, pal: 'snow' },
 };
 const DIFFS = {
   easy: { name: 'Leicht', gather: 0.8, vills: 18, firstAttack: 600, waveSize: 6, waveGrow: 2, waveInterval: 240,
@@ -892,7 +905,7 @@ function generateMap(seed, mapType) {
     const n = noiseAt(x, y, 7.5) * 0.7 + noiseAt(x + 31, y + 17, 3.2) * 0.3;
     let k = 0;
     if (n > M.forest) k = 3;
-    if (x === 0 || y === 0 || x === N - 1 || y === N - 1) k = rnd() < (M.desert ? 0.15 : 0.5) ? 3 : 0;
+    if (x === 0 || y === 0 || x === N - 1 || y === N - 1) k = rnd() < (M.edge !== undefined ? M.edge : M.desert ? 0.15 : 0.5) ? 3 : 0;
     kind[i] = k; kind[m] = k;
   }
   // Seen und Felsen
@@ -903,9 +916,29 @@ function generateMap(seed, mapType) {
       if (d < r) { const i = y * N + x; kind[i] = k; kind[mirror(i)] = k; }
     }
   };
-  blob(22 + rnd() * 6, 44 + rnd() * 6, (3 + rnd() * 2) * M.lakes, 1);
-  blob(8 + rnd() * 6, 36 + rnd() * 6, (2.2 + rnd() * 1.5) * M.lakes, 1);
+  if (M.lakes) {
+    blob(22 + rnd() * 6, 44 + rnd() * 6, (3 + rnd() * 2) * M.lakes, 1);
+    blob(8 + rnd() * 6, 36 + rnd() * 6, (2.2 + rnd() * 1.5) * M.lakes, 1);
+  }
   for (let k = 0; k < M.rocks; k++) blob(14 + rnd() * 36, 14 + rnd() * 36, 0.9 + rnd() * 0.8, 2);
+  if (M.river) { // Fluss quer zwischen den Basen (entlang x + y = N - 1) mit drei Furten
+    const bend = u => (noiseAt(40 + u, 11, 6) - noiseAt(40 - u, 11, 6)) * 7; // ungerade, damit die Karte punktsymmetrisch bleibt
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const u = x - y, v = x + y - (N - 1) - bend(u);
+      if (Math.abs(v) >= 2.6) continue;
+      if (Math.abs(u) < 3 || Math.abs(Math.abs(u) - 30) < 2.5) continue; // Furten
+      kind[y * N + x] = 1;
+    }
+  }
+  for (let k = 0; k < (M.ridges || 0); k++) { // Felsketten mit einem Pass in der Mitte
+    let x = 10 + rnd() * 44, y = 10 + rnd() * 24, dx = rnd() - 0.5, dy = rnd() - 0.5;
+    const l = hyp(dx, dy) || 1; dx /= l; dy /= l;
+    const len = 9 + Math.floor(rnd() * 8), gap = 3 + Math.floor(rnd() * (len - 6));
+    for (let s = 0; s < len; s++) {
+      if (s < gap || s > gap + 2) blob(x, y, 1.1 + rnd() * 0.5, 2);
+      x += dx + (rnd() - 0.5) * 0.5; y += dy + (rnd() - 0.5) * 0.5;
+    }
+  }
   if (M.desert) { // Oasen: kleine Wasserstellen mit Palmenring
     for (let k = 0; k < 2; k++) {
       const cx = 20 + rnd() * 24, cy = 6 + rnd() * 14, r = 1.4 + rnd() * 0.6;
@@ -955,6 +988,7 @@ function generateMap(seed, mapType) {
   for (let i = 0; i < NN; i++) if (kind[i] === 3) {
     const t = makeResource('wood', 'tree', i % N, Math.floor(i / N), 100);
     if (M.desert) t.var = 3; // Palme
+    else if (M.tree) t.var = M.tree;
   }
 
   // Basisressourcen relativ zur Basis platzieren (für beide Spieler gespiegelt)
@@ -971,7 +1005,7 @@ function generateMap(seed, mapType) {
   };
   deposit(goldSpot[0], goldSpot[1], 'gold', 500);
   deposit(stoneSpot[0], stoneSpot[1], 'stone', 400);
-  for (let k = 0; k < 8; k++) {
+  for (let k = 0; k < (M.berries || 8); k++) {
     const x = berrySpot[0] + (k % 3), y = berrySpot[1] + Math.floor(k / 3);
     place(x, y, (px, py) => { if (freeAt(px, py)) makeResource('food', 'berry', px, py, 125); });
   }
@@ -979,6 +1013,8 @@ function generateMap(seed, mapType) {
   const extra = [['gold', 26 + Math.floor(rnd() * 6), 8 + Math.floor(rnd() * 6)], ['stone', 8 + Math.floor(rnd() * 6), 27 + Math.floor(rnd() * 6)],
     ['gold', 29 + Math.floor(rnd() * 3), 29 + Math.floor(rnd() * 3)], ['stone', 36 + Math.floor(rnd() * 5), 20 + Math.floor(rnd() * 5)]];
   if (M.extraGold) extra.push(['gold', 12 + Math.floor(rnd() * 4), 41 + Math.floor(rnd() * 4)]);
+  if (M.river) extra[3] = ['stone', 28 + Math.floor(rnd() * 4), 14 + Math.floor(rnd() * 4)]; // nicht mitten im Fluss
+  for (let k = 0; k < (M.extraStone || 0); k++) extra.push(['stone', 18 + Math.floor(rnd() * 22), 4 + Math.floor(rnd() * 16)]);
   for (const [t, x, y] of extra) deposit(x, y, t, t === 'gold' ? 600 : 500);
   // Bestehende Felder um Lagerstätten nicht vollständig einschließen: Ring freiräumen
   for (const r of G.resources) {
@@ -989,6 +1025,32 @@ function generateMap(seed, mapType) {
       if (G.terr[y * N + x] === 1 || G.terr[y * N + x] === 2) { G.terr[y * N + x] = 0; updateTile(y * N + x); }
     }
   }
+  if (M.bankBerries) for (const [bx, by] of [[36, 20], [20, 36]]) { // fruchtbare Ufer
+    for (let k = 0; k < 6; k++) place(bx + (k % 3), by + Math.floor(k / 3), (px, py) => { if (freeAt(px, py)) makeResource('food', 'berry', px, py, 125); });
+  }
+  if (M.connect) { // abgeschnittene Taschen (hinter Felsketten, Seen, Fluss) mit einem Durchgang zur Mitte verbinden
+    for (let pass = 0; pass < 40; pass++) {
+      const seen = new Uint8Array(NN), st = [B0.y * N + B0.x]; seen[st[0]] = 1;
+      while (st.length) {
+        const i = st.pop(), x = i % N, y = Math.floor(i / N);
+        for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const xx = x + ax, yy = y + ay; if (!inMap(xx, yy)) continue;
+          const j = yy * N + xx; if (seen[j] || G.terr[j]) continue;
+          seen[j] = 1; st.push(j);
+        }
+      }
+      let lost = -1;
+      for (let i = 0; i < NN; i++) if (!G.terr[i] && !seen[i]) { lost = i; break; }
+      if (lost < 0) break;
+      let x = lost % N, y = Math.floor(lost / N);
+      for (let s = 0; s < 2 * N; s++) {
+        const i = y * N + x;
+        if (G.terr[i]) { G.terr[i] = 0; updateTile(i); const m = mirror(i); G.terr[m] = 0; updateTile(m); }
+        else if (seen[i]) break;
+        if (Math.abs(32 - x) >= Math.abs(32 - y)) x += x < 32 ? 1 : -1; else y += y < 32 ? 1 : -1;
+      }
+    }
+  }
   // Wild
   const deerSpots = [[woodSide ? 20 : 11, woodSide ? 11 : 20], [24, 24]];
   for (const [dx, dy] of deerSpots) place(dx, dy, (x, y) => {
@@ -997,6 +1059,15 @@ function generateMap(seed, mapType) {
       if (freeAt(Math.floor(px), Math.floor(py))) spawnUnit('deer', GAIA, px, py);
     }
   });
+  for (let k = 0; k < (M.herds || 0); k++) { // zusätzliche Wildherden
+    const hx = 14 + Math.floor(rnd() * 30), hy = 4 + Math.floor(rnd() * 20);
+    place(hx, hy, (x, y) => {
+      for (let q = 0; q < 4; q++) {
+        const px = x + (q % 2) * 1.2 + 0.5, py = y + Math.floor(q / 2) * 1.2 + 0.5;
+        if (freeAt(Math.floor(px), Math.floor(py))) spawnUnit('deer', GAIA, px, py);
+      }
+    });
+  }
   G.resDirty = true;
   return { bases: [{ x: 6, y: 6 }, { x: N - 10, y: N - 10 }] };
 }
@@ -3723,7 +3794,8 @@ function resourceSprite(sub, variant) {
         c.beginPath(); c.moveTo(2, -55); c.quadraticCurveTo(2 + Math.cos(a) * L * 0.5, -61 + Math.sin(a) * L * 0.3, ex, ey - 1); c.stroke();
       }
       c.fillStyle = '#6b4a22'; c.beginPath(); c.arc(0, -52, 2.3, 0, Math.PI * 2); c.arc(4, -52, 2.3, 0, Math.PI * 2); c.fill();
-    } else if (variant === 0) { // Nadelbaum mit gezackten Etagen
+    } else if (variant === 0 || variant === 4) { // Nadelbaum mit gezackten Etagen (4: verschneit, Winterland)
+      const snowy = variant === 4;
       c.fillStyle = '#4a3018'; c.fillRect(-2.5, -14, 5, 15); c.fillStyle = '#2e1d0e'; c.fillRect(0.5, -14, 2, 15);
       for (let k = 0; k < 5; k++) {
         const by = -9 - k * 12.5, w = 19 - k * 3.4, ht = 21;
@@ -3733,6 +3805,12 @@ function resourceSprite(sub, variant) {
         c.fillStyle = '#244a26'; c.beginPath(); c.moveTo(0, by - ht); for (let i = 3; i <= n; i++) c.lineTo(jag[i][0], jag[i][1]); c.closePath(); c.fill();
         c.strokeStyle = 'rgba(170,215,120,.45)'; c.lineWidth = 0.9; c.beginPath(); c.moveTo(-1, by - ht + 3); c.lineTo(-w * 0.6, by - 1.5); c.stroke();
         c.strokeStyle = 'rgba(10,25,10,.5)'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(-w, by + 1); for (let i = 1; i <= n; i++) c.lineTo(jag[i][0], jag[i][1]); c.stroke();
+      }
+      if (snowy) for (let k = 0; k < 5; k++) { // Schneekappen auf jeder Etage, links mehr Licht
+        const by = -9 - k * 12.5, w = 19 - k * 3.4, ht = 21;
+        c.fillStyle = '#f4f7fb'; c.beginPath(); c.moveTo(0, by - ht); c.lineTo(-w * 0.62, by - ht * 0.32); c.lineTo(-w * 0.3, by - ht * 0.42);
+        c.lineTo(0, by - ht * 0.36); c.lineTo(w * 0.25, by - ht * 0.48); c.lineTo(w * 0.5, by - ht * 0.4); c.closePath(); c.fill();
+        c.fillStyle = 'rgba(170,190,215,.7)'; c.beginPath(); c.moveTo(0, by - ht); c.lineTo(w * 0.5, by - ht * 0.4); c.lineTo(w * 0.25, by - ht * 0.48); c.lineTo(0, by - ht * 0.36); c.closePath(); c.fill();
       }
     } else { // Laubbaum aus beleuchteten Blättertuffs
       const autumn = variant === 2;
@@ -3833,9 +3911,8 @@ function buildTerrain() {
   };
   const FW = new Float32Array(M * M), FR = new Float32Array(M * M), FL = new Float32Array(M * M);
   const FC = new Float32Array(M * M * 3);
-  const desert = !!MAPS[G.map].desert;
-  const gD = desert ? [190, 156, 98] : [63, 112, 38], gM = desert ? [212, 182, 120] : [96, 150, 54], gL = desert ? [230, 204, 146] : [136, 178, 74];
-  const dry = desert ? [178, 140, 88] : [163, 162, 88], fD = desert ? [146, 140, 78] : [52, 88, 34], fM = desert ? [166, 156, 90] : [70, 104, 40];
+  const PAL = terPal(), desert = PAL === TER_PAL.desert, snow = PAL === TER_PAL.snow, steppe = PAL === TER_PAL.steppe;
+  const { gD, gM, gL, dry, fD, fM } = PAL;
   const lerp3 = (A, B, t, o) => { o[0] = A[0] + (B[0] - A[0]) * t; o[1] = A[1] + (B[1] - A[1]) * t; o[2] = A[2] + (B[2] - A[2]) * t; return o; };
   const tmp = [0, 0, 0], tmp2 = [0, 0, 0];
   for (let sy = 0; sy < M; sy++) for (let sx = 0; sx < M; sx++) {
@@ -3854,9 +3931,7 @@ function buildTerrain() {
   // 2) Pixel für Pixel einfärben
   const W = terrainCv.width, H = terrainCv.height;
   const img = c.createImageData(W, H), d = img.data;
-  // in der Wüste: grüner Oasenrand statt Sandufer, rötlicher Fels
-  const sand = desert ? [112, 150, 62] : [200, 182, 128], wet = desert ? [86, 112, 56] : [134, 121, 84], shal = [86, 170, 180], deep = [26, 84, 122];
-  const rock = desert ? [164, 128, 94] : [128, 124, 114], rockD = desert ? [126, 94, 70] : [96, 92, 84];
+  const { sand, wet, shal, deep, rock, rockD } = PAL;
   for (let py = 0; py < H; py++) {
     const b0 = (py - TER_OY) / HALF_H;
     for (let px = 0; px < W; px++) {
@@ -3912,7 +3987,8 @@ function buildTerrain() {
     if (t === 2) {
       for (let k = 0; k < 2; k++) {
         const p = P(x + 0.2 + rnd() * 0.6, y + 0.2 + rnd() * 0.6), r = 5 + rnd() * 7;
-        rockShape(c, p[0], p[1], r, rnd, desert ? ['#c09a74', '#9c7856', '#78583e'] : ['#a8a399', '#8a857b', '#6c675e']);
+        rockShape(c, p[0], p[1], r, rnd, PAL.rockCols);
+        if (snow) { c.fillStyle = 'rgba(248,251,255,.85)'; c.beginPath(); c.ellipse(p[0] - r * 0.15, p[1] - r * 0.85, r * 0.55, r * 0.22, 0, 0, Math.PI * 2); c.fill(); }
       }
       continue;
     }
@@ -3933,14 +4009,15 @@ function buildTerrain() {
       if (rv > 0.4) { if (rnd() < 0.3) { c.fillStyle = 'rgba(70,66,58,.6)'; c.fillRect(p[0], p[1], 2, 1.5); } continue; }
       if (k > 4 && !G.forest[i]) continue;
       if (desert && rnd() < 0.8) continue; // in der Wüste nur vereinzelt trockene Halme
+      if (snow && rnd() < 0.85) continue; // im Schnee schauen nur wenige Halme heraus
       const light = rnd() < 0.5;
-      c.strokeStyle = desert ? (light ? 'rgba(200,180,110,.6)' : 'rgba(120,96,50,.5)') : G.forest[i] ? (light ? 'rgba(110,140,60,.55)' : 'rgba(30,50,15,.45)') : (light ? 'rgba(175,205,105,.55)' : 'rgba(40,75,20,.45)');
+      c.strokeStyle = desert || snow ? (light ? 'rgba(200,180,110,.6)' : 'rgba(120,96,50,.5)') : steppe ? (light ? 'rgba(226,206,120,.65)' : 'rgba(128,104,44,.5)') : G.forest[i] ? (light ? 'rgba(110,140,60,.55)' : 'rgba(30,50,15,.45)') : (light ? 'rgba(175,205,105,.55)' : 'rgba(40,75,20,.45)');
       c.lineWidth = 1;
       c.beginPath();
       for (let q = -1; q <= 1; q++) { c.moveTo(p[0] + q * 1.5, p[1]); c.quadraticCurveTo(p[0] + q * 2, p[1] - 2.5, p[0] + q * 3, p[1] - 4 - rnd() * 2.5); }
       c.stroke();
     }
-    if (!desert && !G.forest[i] && rnd() < 0.05) {
+    if (!desert && !snow && !G.forest[i] && rnd() < (steppe ? 0.015 : 0.05)) {
       const p = P(x + rnd(), y + rnd()); const cols = ['#f4efd2', '#f1d454', '#d98bd0', '#ffffff', '#e8746a'];
       c.fillStyle = cols[(rnd() * cols.length) | 0];
       for (let q = 0; q < 3; q++) { c.beginPath(); c.arc(p[0] + (rnd() - 0.5) * 6, p[1] - 2 - rnd() * 2, 1.3, 0, Math.PI * 2); c.fill(); }
@@ -3951,6 +4028,23 @@ function buildTerrain() {
     }
   }
 }
+// Geländefarben je Kartentyp (nur Optik)
+const TER_PAL = {
+  green: { gD: [63, 112, 38], gM: [96, 150, 54], gL: [136, 178, 74], dry: [163, 162, 88], fD: [52, 88, 34], fM: [70, 104, 40],
+    sand: [200, 182, 128], wet: [134, 121, 84], shal: [86, 170, 180], deep: [26, 84, 122], rock: [128, 124, 114], rockD: [96, 92, 84],
+    rockCols: ['#a8a399', '#8a857b', '#6c675e'], mm: [100, 145, 60] },
+  // Wüste: grüner Oasenrand statt Sandufer, rötlicher Fels
+  desert: { gD: [190, 156, 98], gM: [212, 182, 120], gL: [230, 204, 146], dry: [178, 140, 88], fD: [146, 140, 78], fM: [166, 156, 90],
+    sand: [112, 150, 62], wet: [86, 112, 56], shal: [86, 170, 180], deep: [26, 84, 122], rock: [164, 128, 94], rockD: [126, 94, 70],
+    rockCols: ['#c09a74', '#9c7856', '#78583e'], mm: [214, 187, 127] },
+  steppe: { gD: [138, 136, 62], gM: [176, 164, 84], gL: [206, 190, 112], dry: [196, 168, 98], fD: [82, 100, 44], fM: [104, 120, 52],
+    sand: [204, 186, 130], wet: [134, 121, 84], shal: [92, 168, 170], deep: [30, 88, 118], rock: [140, 128, 108], rockD: [104, 94, 78],
+    rockCols: ['#b0a48e', '#90846e', '#6e6452'], mm: [176, 164, 84] },
+  snow: { gD: [196, 204, 214], gM: [222, 228, 236], gL: [244, 247, 251], dry: [204, 206, 206], fD: [158, 170, 168], fM: [184, 194, 194],
+    sand: [210, 218, 226], wet: [150, 166, 178], shal: [132, 186, 206], deep: [40, 92, 132], rock: [118, 120, 126], rockD: [86, 88, 96],
+    rockCols: ['#9a9ca4', '#7c7e86', '#5e6068'], mm: [226, 231, 238] },
+};
+const terPal = () => TER_PAL[MAPS[G.map].pal] || TER_PAL.green;
 // facettierter Felsbrocken (auch für Ressourcen)
 function rockShape(c, x, y, r, rnd, cols) {
   const tw = (rnd() - 0.5) * r * 0.3;
@@ -4653,7 +4747,7 @@ function updateMinimapTiles() {
     else if (t === 1) col = [47, 106, 150];
     else if (t === 2) col = [120, 116, 106];
     else if (r) col = r.sub === 'tree' ? [38, 82, 34] : r.sub === 'gold' ? [240, 200, 40] : r.sub === 'stone' ? [190, 190, 185] : r.sub === 'berry' ? [200, 60, 90] : [150, 100, 60];
-    else col = MAPS[G.map].desert ? [214, 187, 127] : [100, 145, 60];
+    else col = terPal().mm;
     d[i * 4] = col[0]; d[i * 4 + 1] = col[1]; d[i * 4 + 2] = col[2]; d[i * 4 + 3] = 255;
   }
   c.putImageData(img, 0, 0);

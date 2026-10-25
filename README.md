@@ -2,7 +2,7 @@
 
 **▶ [Jetzt im Browser spielen](https://luckiesdavid.github.io/age-rts/)** – ohne Download, einfach den Link öffnen.
 
-Ein isometrisches Echtzeit-Strategiespiel für den Browser: 1 gegen 1 gegen eine KI oder online gegen einen anderen Menschen. Das Spielprinzip lehnt sich an Age of Empires IV an: Baue eine Wirtschaft mit vier Rohstoffen auf, steige mit Wahrzeichen durch vier Zeitalter auf, erforsche Verbesserungen, stelle eine Armee mit den richtigen Kontern auf und zerstöre die Wahrzeichen des Gegners.
+Ein isometrisches Echtzeit-Strategiespiel für den Browser: gegen bis zu drei Computerspieler (wahlweise mit KI-Verbündeten in Teams, z. B. 2 gegen 2) oder online gegen einen anderen Menschen. Das Spielprinzip lehnt sich an Age of Empires IV an: Baue eine Wirtschaft mit vier Rohstoffen auf, steige mit Wahrzeichen durch vier Zeitalter auf, erforsche Verbesserungen, stelle eine Armee mit den richtigen Kontern auf und zerstöre die Wahrzeichen des Gegners.
 
 Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Grafiken oder Build-Schritte (nur der Mehrspielermodus lädt die Netzwerkbibliothek PeerJS nach); alle Gebäude, Einheiten und das Gelände werden prozedural auf dem Canvas gezeichnet.
 
@@ -41,7 +41,7 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 - Test der Lockstep-Logik ohne Browser: `node tests/lockstep-sim.mjs [Minuten] [Seed] [Latenz in Ticks]`.
 - Test für Abbruch, Nachliefern und Fortsetzen ohne Browser: `node tests/reconnect-sim.mjs [Seed]`.
 
-**Ziel (Wahrzeichen-Sieg):** Zerstöre alle Wahrzeichen des Gegners. Sein erstes Dorfzentrum zählt als Wahrzeichen, dazu kommen alle Wahrzeichen, die er für den Aufstieg in neue Zeitalter gebaut hat. Wer keine fertigen Gebäude außer Mauern mehr hat, verliert ebenfalls. Umgekehrt gilt dasselbe für dich.
+**Ziel (Wahrzeichen-Sieg):** Zerstöre alle Wahrzeichen des Gegners. Sein erstes Dorfzentrum zählt als Wahrzeichen, dazu kommen alle Wahrzeichen, die er für den Aufstieg in neue Zeitalter gebaut hat. Wer keine fertigen Gebäude außer Mauern mehr hat, verliert ebenfalls. Umgekehrt gilt dasselbe für dich. Mit mehreren Computerspielern gewinnt das Team, das als letztes übrig bleibt; verlierst du selbst alle Wahrzeichen, ist das Spiel verloren. Im Hauptmenü unter **Spieler** fügst du mit „+ Computer“ bis zu drei Computerspieler hinzu und stellst per Klick ein, ob sie verbündet sind oder zu welchem Gegner-Team sie gehören. Verbündete greifen sich nicht an und dürfen durch die Tore des anderen.
 
 ## Auf dem Handy
 

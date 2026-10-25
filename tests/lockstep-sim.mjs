@@ -46,7 +46,7 @@ function randomCmd(w) {
     return { c: 'act', ids: vills.filter(() => rand() < 0.4).map(u => u.id), x: t.x, y: t.y, t: t.id, am: false };
   }
   if (r < 0.55 && vills.length) {
-    const types = ['house', 'barracks', 'range', 'stable', 'farm', 'lumber', 'palisade', 'tower', 'blacksmith', 'market', 'mill', 'keep', 'siege'];
+    const types = ['house', 'barracks', 'range', 'stable', 'farm', 'lumber', 'palisade', 'tower', 'blacksmith', 'market', 'mill', 'keep', 'siege', 'castle'];
     const type = types[Math.floor(rand() * types.length)];
     const tc = blds.find(b => b.type === 'tc') || vills[0];
     const tx = Math.floor(tc.x + (rand() - 0.5) * 16), ty = Math.floor(tc.y + (rand() - 0.5) * 16);
@@ -61,6 +61,12 @@ function randomCmd(w) {
     if (d.market) return { c: 'mkt', r: ['food', 'wood', 'stone'][Math.floor(rand() * 3)], buy: rand() < 0.5 };
     if (tr) return { c: 'train', ids: [b.id], type: tr[Math.floor(rand() * tr.length)], n: 1 + Math.floor(rand() * 3) };
   }
+  // Burg / Bergfried besetzen oder räumen
+  const fort = blds.find(b => b.built && b.gar);
+  if (r < 0.8 && fort) {
+    if (fort.gar.length && rand() < 0.4) return { c: 'ungar', id: fort.id };
+    return { c: 'act', ids: mine.filter(() => rand() < 0.3).map(u => u.id), x: fort.x, y: fort.y, t: fort.id, am: false };
+  }
   if (r < 0.95) {
     const army = mine.filter(u => u.type !== 'villager');
     if (army.length) {
@@ -74,7 +80,7 @@ function randomCmd(w) {
 }
 
 // Feste Abläufe: zu diesen Ticks bauen alle Dorfbewohner ein Wahrzeichen (danach 80 s keine Zufallsbefehle für Dorfbewohner)
-const SCRIPT = { 900: ['lm_school', 'lm_market'], 5400: ['lm_fort', 'lm_treasury'], 10800: ['lm_academy', 'lm_cathedral'] };
+const SCRIPT = { 900: ['lm_school', 'lm_market'], 5400: ['lm_fort', 'lm_treasury'], 8100: ['castle', 'castle'], 10800: ['lm_academy', 'lm_cathedral'] };
 function scriptedCmd(w) {
   const lm = SCRIPT[w.G.tick]; if (!lm || !rich) return null;
   const G = w.G, p = w.me, type = lm[p];
@@ -113,7 +119,8 @@ const hashes = worlds.map(w => { A.G = w.G; return A.stateHash(); });
 const summary = worlds.map(w => ({
   tick: w.G.tick, units: w.G.units.filter(u => !u.dead).length, buildings: w.G.buildings.filter(b => !b.dead).length,
   res: w.G.players.map(p => Object.values(p.res).map(Math.floor).join('/')), age: w.G.players.map(p => p.age),
-  techs: w.G.players.map(p => Object.keys(p.techs).length), rotated: w.G.buildings.filter(b => b.rot === 1).length, stalls: w.stalls, desync: w.L.desync, over: w.G.over,
+  techs: w.G.players.map(p => Object.keys(p.techs).length), castles: w.G.buildings.filter(b => !b.dead && b.type === 'castle').length,
+  garrisoned: w.G.buildings.reduce((n, b) => n + (b.dead || !b.gar ? 0 : b.gar.length), 0), rotated: w.G.buildings.filter(b => b.rot === 1).length, stalls: w.stalls, desync: w.L.desync, over: w.G.over,
 }));
 console.log(JSON.stringify({ cmdsSent, hashes, summary }, null, 1));
 const ok = hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick

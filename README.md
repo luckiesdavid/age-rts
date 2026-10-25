@@ -40,6 +40,7 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 - Eigener Vermittlungsserver statt des öffentlichen: `npx -p peer peerjs --port 9000` starten und das Spiel mit `index.html#peer=dein-server:9000` öffnen (beide Spieler).
 - Test der Lockstep-Logik ohne Browser: `node tests/lockstep-sim.mjs [Minuten] [Seed] [Latenz in Ticks]`.
 - Test für Abbruch, Nachliefern und Fortsetzen ohne Browser: `node tests/reconnect-sim.mjs [Seed]`.
+- Test für Burg und Besatzung (inklusive Spielstand): `node tests/castle-sim.mjs [Seed]`.
 
 **Ziel (Wahrzeichen-Sieg):** Zerstöre alle Wahrzeichen des Gegners. Sein erstes Dorfzentrum zählt als Wahrzeichen, dazu kommen alle Wahrzeichen, die er für den Aufstieg in neue Zeitalter gebaut hat. Wer keine fertigen Gebäude außer Mauern mehr hat, verliert ebenfalls. Umgekehrt gilt dasselbe für dich. Mit mehreren Computerspielern gewinnt das Team, das als letztes übrig bleibt; verlierst du selbst alle Wahrzeichen, ist das Spiel verloren. Im Hauptmenü unter **Spieler** fügst du mit „+ Computer“ bis zu drei Computerspieler hinzu und stellst per Klick ein, ob sie verbündet sind oder zu welchem Gegner-Team sie gehören. Verbündete greifen sich nicht an und dürfen durch die Tore des anderen.
 
@@ -100,7 +101,7 @@ Wie in Age of Empires IV gibt es vier Zeitalter. Für den Aufstieg baust du mit 
 |---|---|---|---|
 | I Dunkles Zeitalter | – | – (Start) | Dorfbewohner, Späher, Speerkämpfer, Kaserne, Wirtschaftsgebäude, Palisaden |
 | II Feudalzeit | 400 Nahrung, 200 Gold | **Marktkreuz** (alle Dorfbewohner sammeln 10 % schneller) oder **Kriegsschule** (Militär 25 % schneller ausgebildet) | Bogenschütze, Waffenknecht, Reiter, Ramme, Schießstand, Stall, Werkstatt, Schmiede, Markt, Turm, Steinmauer, weiteres Dorfzentrum |
-| III Burgzeit | 1200 Nahrung, 600 Gold | **Schatzkammer** (+1,5 Gold pro Sekunde, Lager für Gold/Stein) oder **Wehrburg** (sehr robust, schießt 4 Pfeile) | Armbrustschütze, Ritter, Katapult, Tribok, Bergfried |
+| III Burgzeit | 1200 Nahrung, 600 Gold | **Schatzkammer** (+1,5 Gold pro Sekunde, Lager für Gold/Stein) oder **Wehrburg** (sehr robust, schießt 4 Pfeile) | Armbrustschütze, Ritter, Katapult, Tribok, Bergfried, **Burg** mit Langbogenschütze und Ordensritter |
 | IV Imperialzeit | 2400 Nahrung, 1200 Gold | **Dom** (heilt eigene Einheiten in der Nähe) oder **Kriegsakademie** (Militär +15 % Schaden) | Handkanonier, dritte Stufe der Schmiede |
 
 ## Technologien
@@ -111,6 +112,7 @@ Wie in Age of Empires IV gibt es vier Zeitalter. Für den Aufstieg baust du mit 
 | Mühle | Bewässerung (II), Fruchtwechsel (III) | je +15 % Nahrung |
 | Holzlager | Doppelaxt (II), Bügelsäge (III) | je +15 % Holz |
 | Bergbaulager | Spitzhacke (II), Schachtbau (III) | je +15 % Gold und Stein |
+| Burg | Wehrgänge (III), Brandpfeile (III) | Türme, Bergfriede, Burgen und Dorfzentren: +25 % LP bzw. +3 Schaden je Pfeil |
 | Schmiede | Geschmiedete Klingen, Pfeilspitzen, Kettenpanzer, Lederpolster (je Stufe I–III ab Zeitalter II–IV) | +1 Nahkampf- bzw. Fernkampfangriff, −1 Schaden durch Nahkampf bzw. Fernkampf (Militär) |
 
 **Markt:** Kauft und verkauft Nahrung, Holz und Stein in 100er-Schritten gegen Gold. Kaufen kostet mehr, als Verkaufen bringt, und jeder Handel verschiebt den Preis.
@@ -143,7 +145,8 @@ Das Bevölkerungslimit steigt mit jedem Haus um 10 (Dorfzentrum: 10, Maximum 200
 | Schmiede (II) | 150 Holz | Angriffs- und Rüstungsverbesserungen |
 | Markt (II) | 150 Holz | Rohstoffhandel |
 | Turm (II) | 75 Holz, 125 Stein | schießt automatisch Pfeile (Reichweite 8) |
-| Bergfried (III) | 150 Holz, 650 Stein | Burg, schießt 3 Pfeile (Reichweite 9), sehr robust |
+| Bergfried (III) | 150 Holz, 650 Stein | Wehrturm, schießt 3 Pfeile (Reichweite 9), sehr robust, Besatzung bis 6 |
+| Burg (III) | 200 Holz, 800 Stein | wie in Age of Empires: schießt 4 Pfeile (Reichweite 9), Besatzung bis 12, bildet Langbogenschützen, Ordensritter und Triboks aus |
 | Palisade | 3 Holz je Segment | billige, schwache Holzmauer |
 | Palisadentor | 25 Holz | Tor in der Palisade |
 | Steinmauer (II) | 6 Stein je Segment | teure, starke Mauer |
@@ -168,7 +171,11 @@ Einheiten sind wie in AoE4 **leicht** oder **schwer** gepanzert. Schwere Einheit
 | Ritter | III | 140 Nahrung, 100 Gold | schwere Reiterei, sehr stark, schwach gegen Speerkämpfer und Armbrustschützen |
 | Katapult | III | 150 Holz, 150 Gold | Fernkampf (Reichweite 9, Mindestreichweite 3) mit Flächenschaden, gut gegen Gruppen und Gebäude, schwach gegen Reiter |
 | Tribok | III | 400 Holz, 250 Gold | Reichweite 12, zerstört Gebäude und Burgen, greift keine Einheiten an |
+| Langbogenschütze | III (Burg) | 70 Holz, 40 Gold | Fernkampf mit Reichweite 7,5, stark gegen leichte Infanterie |
+| Ordensritter | III (Burg) | 120 Nahrung, 90 Gold | langsame, sehr robuste schwere Infanterie mit Zweihänder, schlägt auch Reiter |
 | Handkanonier | IV | 120 Nahrung, 120 Gold | schwerer Fernkampf mit Schießpulver, hoher Schaden |
+
+**Besatzung:** Wähle Einheiten oder Dorfbewohner und klicke rechts auf deine Burg oder deinen Bergfried. Drinnen sind sie geschützt und heilen; je zwei Besatzer schießt das Gebäude einen Pfeil mehr. **Herauslassen (V)** schickt alle zum Sammelpunkt, wird das Gebäude zerstört, kommen sie von selbst heraus.
 
 Einheiten greifen Feinde in Sichtweite automatisch an. Pfeile richten an Gebäuden und Mauern kaum Schaden an, Belagerungswaffen sind dafür gebaut.
 
@@ -178,4 +185,4 @@ Einheiten greifen Feinde in Sichtweite automatisch an. Pfeile richten an Gebäud
 - **Mittel:** normale Wirtschaft, Palisaden mit Toren, zwei Türme, Rammen gegen Befestigungen.
 - **Schwer:** etwas schnelleres Sammeln (+18 %) und kleiner Startbonus, frühere und größere Wellen, Steinmauern, drei Türme, Rammen und Katapulte.
 
-Die KI spielt nach denselben Regeln und Kosten wie du: Sie steigt mit Wahrzeichen in neue Zeitalter auf (Leicht bis zur Burgzeit, Mittel und Schwer bis zur Imperialzeit), erforscht Verbesserungen, handelt am Markt, baut Häuser rechtzeitig, verteilt Dorfbewohner nach Bedarf, stellt eine gemischte Armee mit Kontern auf, verteidigt ihre Basis und bricht Mauern mit Belagerungswaffen auf oder umgeht sie.
+Die KI spielt nach denselben Regeln und Kosten wie du: Sie steigt mit Wahrzeichen in neue Zeitalter auf (Leicht bis zur Burgzeit, Mittel und Schwer bis zur Imperialzeit), erforscht Verbesserungen, handelt am Markt, baut Häuser rechtzeitig, verteilt Dorfbewohner nach Bedarf, stellt eine gemischte Armee mit Kontern auf, verteidigt ihre Basis (ab Mittel mit einer Burg, in die bedrohte Dorfbewohner flüchten) und bricht Mauern mit Belagerungswaffen auf oder umgeht sie.

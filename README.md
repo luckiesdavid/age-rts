@@ -22,12 +22,20 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 
 **Technik:** Die Browser verbinden sich direkt per WebRTC (Bibliothek [PeerJS](https://peerjs.com), wird nur im Mehrspielermodus aus dem CDN geladen). Der kostenlose öffentliche PeerJS-Server vermittelt nur den Verbindungsaufbau; STUN und TURN sorgen dafür, dass die Verbindung auch hinter Routern (NAT) und Firewalls zustande kommt. Das Spiel läuft im *deterministischen Lockstep*: Beide Rechner simulieren dasselbe Spiel, es werden nur die Befehle der Spieler übertragen (einige Bytes pro 100 ms). Befehle werden je nach gemessenem Ping 200–800 ms in der Zukunft eingeplant, damit sie bei beiden gleichzeitig ausgeführt werden. Eine Prüfsumme pro Sekunde erkennt, falls die Spielstände doch auseinanderlaufen.
 
+**Verbindungsabbrüche und Fortsetzen:**
+- Bricht die Verbindung kurz ab (WLAN-Wechsel, Funkloch), hält das Spiel bei beiden an („Verbindung unterbrochen“) und verbindet sich automatisch neu. Befehle, die währenddessen unterwegs waren, werden nachgeliefert; danach geht es ohne Datenverlust weiter.
+- Lädt ein Spieler die Seite neu, kommt er über den Einladungslink wieder ins laufende Spiel; der aktuelle Spielstand wird dabei übertragen.
+- Der Spielstand wird alle 30 Sekunden, beim Abbruch und beim Schließen des Tabs lokal zwischengespeichert. Unter **Mehrspieler → Fortsetzen** geht ein abgebrochenes Spiel später weiter: Der Ersteller öffnet es wieder, der Mitspieler nutzt den alten Einladungslink oder ebenfalls „Fortsetzen“. Der neuere Stand der beiden Spieler gewinnt.
+- Im Pausenmenü beendet **Unterbrechen & später weiterspielen** das Spiel für beide, ohne dass jemand verliert.
+- Sollten die Spielstände doch einmal auseinanderlaufen, überträgt der Ersteller automatisch seinen Stand.
+
 **Hinweise:**
-- Speichern und Laden gibt es nur im Einzelspieler.
+- Die drei Speicherplätze gibt es nur im Einzelspieler; im Mehrspieler gibt es einen automatischen Zwischenstand.
 - Pause (Leertaste/P) gilt für beide. **Aufgeben & Hauptmenü** beendet das Spiel; der Mitspieler gewinnt.
 - Wechselt ein Spieler den Tab, hält der Browser das Spiel an; der Mitspieler sieht dann „Warte auf Mitspieler …“.
 - Eigener Vermittlungsserver statt des öffentlichen: `npx -p peer peerjs --port 9000` starten und das Spiel mit `index.html#peer=dein-server:9000` öffnen (beide Spieler).
 - Test der Lockstep-Logik ohne Browser: `node tests/lockstep-sim.mjs [Minuten] [Seed] [Latenz in Ticks]`.
+- Test für Abbruch, Nachliefern und Fortsetzen ohne Browser: `node tests/reconnect-sim.mjs [Seed]`.
 
 **Ziel:** Zerstöre alle gegnerischen Gebäude (Mauern zählen nicht) – oder sein Dorfzentrum und alle seine Einheiten. Umgekehrt verlierst du.
 

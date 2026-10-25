@@ -327,6 +327,7 @@ body.touch .mouseKeys, .touchKeys, body.touch .deskOnly { display: none !importa
 .ctlRow { display: flex; gap: 8px; justify-content: center; margin: 4px 0 10px; }
 .ctlRow .diff { flex: 0 1 140px; padding: 8px 6px 7px; font-size: 13px; }
 .ctlEdge { text-align: center; margin: 0 0 12px; }
+.startOpts .ctlEdge { margin: 12px 0 4px; }
 body.touch .touchKeys { display: block; }
 @media (hover: none) {
   .cbtn:hover { border-color: #7a5a32; background: linear-gradient(#5a4128, #33251a); }
@@ -497,6 +498,7 @@ body.touch .touchKeys { display: block; }
       <button class="diff" data-m="winter">Winterland<small>Nadelwald, mehr Gold, kaum Beeren</small></button>
     </div>
     <div class="row">Karten-Seed: <input id="seedInput" type="text" placeholder="zufällig"></div>
+    <div class="ctlEdge"><button class="sbtn" id="btnSoundStart"></button> <button class="sbtn" id="btnMusicStart"></button></div>
     </div>
     <div class="startActs">
       <button class="bigbtn" id="btnStart">Spiel starten</button>
@@ -524,7 +526,6 @@ body.touch .touchKeys { display: block; }
       </div>
       <div class="ctlEdge"><button class="sbtn" id="btnEdgeStart"></button></div>
     </div>
-    <div class="ctlEdge"><button class="sbtn" id="btnSoundStart"></button></div>
     <div class="keys mouseKeys">
       <b>Touchpad:</b> <b>zwei Finger schieben</b> Kamera, <b>Pinch</b> Zoom, <b>Klick mit zwei Fingern</b> Befehl<br>
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
@@ -625,10 +626,11 @@ body.touch .touchKeys { display: block; }
       <button class="bigbtn" id="btnResume">Fortsetzen</button>
       <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
       <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
+      <button class="bigbtn alt" id="btnSound"></button>
+      <button class="bigbtn alt" id="btnMusic"></button>
       <button class="bigbtn alt" id="btnDiff"></button>
       <button class="bigbtn alt deskOnly" id="btnCtrlMode"></button>
       <button class="bigbtn alt deskOnly" id="btnEdge"></button>
-      <button class="bigbtn alt" id="btnSound"></button>
       <button class="bigbtn alt hidden" id="btnSaveLater">Unterbrechen &amp; später weiterspielen</button>
       <button class="bigbtn alt quiet" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
     </div>
@@ -5620,18 +5622,27 @@ function jumpToAlert() {
 
 // Ton per WebAudio erzeugt (keine Tondateien). Browser, allen voran Safari/iOS, erlauben Ton erst nach
 // einer Nutzeraktion: der AudioContext wird deshalb beim ersten Tippen, Klicken oder Tastendruck angelegt.
+// Ein gemeinsamer AudioContext für Warnton und Hintergrundmusik. Ton: alles an / nur Angriffswarnung / aus.
 const SND_KEY = 'burgschiltberg.sound';
-const SND = { on: true, ctx: null, hornT: -1e9 };
-try { const c = JSON.parse(localStorage.getItem(SND_KEY)); if (c && c.on === false) SND.on = false; } catch (e) { /* ignorieren */ }
-function setSound(on) {
-  SND.on = on;
-  try { localStorage.setItem(SND_KEY, JSON.stringify({ on })); } catch (e) { /* ignorieren */ }
+const SND_MODES = { all: 'alles an', alert: 'nur Angriffswarnung', off: 'aus' };
+const SND = { mode: 'all', ctx: null, hornT: -1e9 };
+try {
+  const c = JSON.parse(localStorage.getItem(SND_KEY));
+  if (c && SND_MODES[c.mode]) SND.mode = c.mode; else if (c && c.on === false) SND.mode = 'off'; // alte Einstellung: Warnton aus
+} catch (e) { /* ignorieren */ }
+function setSound(mode) {
+  SND.mode = mode;
+  try { localStorage.setItem(SND_KEY, JSON.stringify({ mode })); } catch (e) { /* ignorieren */ }
   renderSound();
-  if (on) { audioUnlock(); SND.hornT = -1e9; setTimeout(() => playHorn(false), 60); } // Hörprobe
+  if (mode !== 'off') { audioUnlock(); SND.hornT = -1e9; setTimeout(() => playHorn(false), 60); } // Hörprobe
+  musTick();
 }
-function renderSound() { $('btnSound').textContent = $('btnSoundStart').textContent = 'Warnton bei Angriffen: ' + (SND.on ? 'an' : 'aus'); }
+function renderSound() {
+  $('btnSound').textContent = $('btnSoundStart').textContent = 'Ton: ' + SND_MODES[SND.mode];
+  renderMusic();
+}
 function audioUnlock() {
-  if (!SND.on) return;
+  if (SND.mode === 'off') return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   try {
@@ -5640,6 +5651,7 @@ function audioUnlock() {
       // ein stiller Puffer schaltet den Ton unter iOS frei
       const src = SND.ctx.createBufferSource(); src.buffer = SND.ctx.createBuffer(1, 1, 22050); src.connect(SND.ctx.destination); src.start(0);
     }
+    if (MUS.ctx !== SND.ctx) musInit(SND.ctx);
     if (SND.ctx.state !== 'running') SND.ctx.resume();
   } catch (e) { /* ohne Ton weiter */ }
 }
@@ -5648,10 +5660,11 @@ for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener
 // soft: ein einzelner, leiserer Stoß (Angriff auf einen Verbündeten). Höchstens alle 8 s.
 function playHorn(soft) {
   const ac = SND.ctx;
-  if (!SND.on || !ac || ac.state !== 'running' || document.hidden) return;
+  if (SND.mode === 'off' || !ac || ac.state !== 'running' || document.hidden) return;
   const now = performance.now();
   if (now - SND.hornT < 8000) return;
   SND.hornT = now;
+  musicDuck(soft ? 1.5 : 2.5); // Musik kurz leiser, damit das Horn klar heraussticht
   const out = ac.createGain(); out.gain.value = soft ? 0.6 : 1.1; out.connect(ac.destination);
   const notes = soft ? [[0, 0.55]] : [[0, 0.3], [0.4, 1.05]];
   const t0 = ac.currentTime + 0.03, f = 174.6; // F3
@@ -5958,8 +5971,9 @@ function setupInput() {
   $('btnDiff').addEventListener('click', () => { const d = Object.keys(DIFFS); setDifficulty(d[(d.indexOf(G.diff) + 1) % d.length]); });
   $('btnEdgeStart').addEventListener('click', () => setCtrl(null, !CTRL.edge));
   renderCtrl();
-  $('btnSound').addEventListener('click', () => setSound(!SND.on));
-  $('btnSoundStart').addEventListener('click', () => setSound(!SND.on));
+  const nextSound = () => { const m = Object.keys(SND_MODES); setSound(m[(m.indexOf(SND.mode) + 1) % m.length]); };
+  $('btnSound').addEventListener('click', nextSound);
+  $('btnSoundStart').addEventListener('click', nextSound);
   renderSound();
   $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
   $('btnLoadStart').addEventListener('click', () => openSaveScreen('load'));
@@ -6055,6 +6069,220 @@ function updateDiffUI() {
   $('btnDiff').classList.toggle('hidden', !!G.net);
   $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[G.diff].name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
   $('diffLabel').title = $('diffLabel').textContent;
+}
+
+/* ---------- Hintergrundmusik ----------
+   Ruhige, mittelalterlich klingende Musik, laufend per WebAudio erzeugt (keine Tondateien): ein leiser Bordun
+   wie bei einer Drehleier, darüber kurze Melodien in D-dorisch auf Laute (gezupfte Saite, Karplus-Strong) oder
+   Blockflöte, dazwischen lange Pausen, Vogelrufe und etwas Wind, alles mit Hall. Jede Phrase wird neu gewürfelt
+   (Math.random, nur Ton, nie Spielzustand), deshalb wiederholt sich nichts. Läuft nur im Spiel und nur bei
+   „Ton: alles an“, im Pausenmenü leiser. Lautstärke in drei Stufen im Start- und Pausenmenü. Nutzt den
+   AudioContext des Warntons (SND.ctx, angelegt in audioUnlock). */
+const MUS_KEY = 'burgschiltberg.music';
+const MUS_LEVELS = [['leise', 0.5], ['mittel', 0.85], ['laut', 1.3]];
+const MUS_VOL = 0.9; // Gesamtpegel, bewusst deutlich unter dem Warnton
+const MUS_SCALE = [0, 2, 3, 5, 7, 9, 10]; // dorisch
+// Akkorde als Stufen der Tonleiter (0 = D), Grundton des Borduns als MIDI-Note, mögliche Nachfolger
+const MUS_CHORDS = [
+  { deg: [0, 2, 4], root: 50, next: [1, 2, 3, 4, 1, 2] }, // d-Moll
+  { deg: [6, 1, 3], root: 48, next: [0, 0, 2] },          // C-Dur
+  { deg: [2, 4, 6], root: 53, next: [1, 0, 3] },          // F-Dur
+  { deg: [3, 5, 0], root: 43, next: [0, 1] },             // G-Dur
+  { deg: [4, 6, 1], root: 45, next: [0, 2] },             // a-Moll
+];
+const MUS = { lvl: 1, ctx: null, master: null, dry: null, bus: null, playing: false, next: 0, chord: 0, phrases: 0,
+  birdT: 0, wind: null, strings: {}, noise: null, fac: 1, duckT: 0, map: '' };
+try { const c = JSON.parse(localStorage.getItem(MUS_KEY)); if (c && c.lvl >= 0 && c.lvl < MUS_LEVELS.length) MUS.lvl = c.lvl; } catch (e) { /* ignorieren */ }
+const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
+const musPick = a => a[Math.floor(Math.random() * a.length)];
+const musDeg = p => 62 + 12 * Math.floor(p / 7) + MUS_SCALE[((p % 7) + 7) % 7]; // Stufe → MIDI, 0 = D4
+
+function setMusic(lvl) {
+  MUS.lvl = lvl;
+  try { localStorage.setItem(MUS_KEY, JSON.stringify({ lvl })); } catch (e) { /* ignorieren */ }
+  renderMusic();
+  musGain(0.4);
+  musTick();
+}
+function renderMusic() {
+  for (const b of [$('btnMusic'), $('btnMusicStart')]) { b.textContent = 'Musik: ' + MUS_LEVELS[MUS.lvl][0]; b.classList.toggle('hidden', SND.mode !== 'all'); }
+}
+// Feste Signalkette: Stimmen → bus → trocken + Hall → master → Ausgang (auch für OfflineAudioContext nutzbar)
+function musInit(ac) {
+  MUS.ctx = ac; MUS.strings = {};
+  MUS.master = ac.createGain(); MUS.master.gain.value = 0; MUS.master.connect(ac.destination);
+  const sr = ac.sampleRate;
+  const ir = ac.createBuffer(2, Math.floor(sr * 3.2), sr);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c); let lp = 0;
+    for (let i = 0; i < d.length; i++) { lp += ((Math.random() * 2 - 1) - lp) * 0.35; d[i] = lp * Math.exp(-i / sr * 2.2); }
+  }
+  const rev = ac.createConvolver(); rev.buffer = ir;
+  const wet = ac.createGain(); wet.gain.value = 0.55; rev.connect(wet); wet.connect(MUS.master);
+  MUS.dry = ac.createGain(); MUS.dry.gain.value = 0.75; MUS.dry.connect(MUS.master); MUS.rev = rev;
+  MUS.noise = ac.createBuffer(1, sr * 3, sr);
+  const n = MUS.noise.getChannelData(0); for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
+}
+// Zielpegel: Stufe × Pause × kurzzeitiges Absenken für Warntöne
+function musGain(tc) {
+  if (!MUS.ctx) return;
+  const now = MUS.ctx.currentTime, g = MUS.master.gain;
+  const v = MUS.playing ? MUS_LEVELS[MUS.lvl][1] * MUS_VOL * MUS.fac : 0;
+  g.cancelScheduledValues(now); g.setValueAtTime(g.value, now);
+  if (performance.now() < MUS.duckT) { g.setTargetAtTime(v * 0.3, now, 0.05); g.setTargetAtTime(v, now + (MUS.duckT - performance.now()) / 1000, 0.8); }
+  else g.setTargetAtTime(v, now, tc);
+}
+// Für Warntöne: Musik für sec Sekunden deutlich leiser, damit das Signal klar heraussticht
+function musicDuck(sec) { MUS.duckT = performance.now() + sec * 1000; musGain(0.05); }
+
+function musTick() {
+  const want = SND.mode === 'all' && running && G && !G.over && !document.hidden;
+  const ac = MUS.ctx;
+  if (!ac) return;
+  if (!want) { if (MUS.playing) musStop(); return; }
+  if (ac.state !== 'running') return;
+  if (!MUS.playing) musStart(ac.currentTime);
+  const fac = paused ? 0.55 : 1;
+  if (fac !== MUS.fac) { MUS.fac = fac; musGain(0.6); }
+  musSchedule(ac.currentTime);
+}
+function musSchedule(now) {
+  if (now > MUS.next - 1.5) musPhrase(Math.max(MUS.next, now + 0.1));
+  if (now > MUS.birdT) {
+    const cold = MUS.map === 'winter' || MUS.map === 'desert';
+    if (!cold || Math.random() < 0.3) musBirds(now + 0.2);
+    MUS.birdT = now + 10 + Math.random() * 24;
+  }
+}
+function musStart(now) {
+  const ac = MUS.ctx;
+  MUS.playing = true; MUS.map = G ? G.map : '';
+  // jede Wiedergabe bekommt einen eigenen Bus: beim Stoppen verklingt er samt aller schon geplanten Noten
+  MUS.bus = ac.createGain(); MUS.bus.connect(MUS.dry); MUS.bus.connect(MUS.rev);
+  MUS.next = now + 0.5; MUS.chord = 0; MUS.phrases = 0; MUS.birdT = now + 6 + Math.random() * 10;
+  MUS.wind = musWind(now, MUS.map === 'winter' || MUS.map === 'steppe' ? 0.5 : 0.22);
+  musGain(2.5);
+}
+function musStop() {
+  const ac = MUS.ctx, bus = MUS.bus, now = ac.currentTime;
+  MUS.playing = false; musGain(0.6);
+  if (MUS.wind) { try { MUS.wind.stop(now + 3); } catch (e) { /* schon gestoppt */ } MUS.wind = null; }
+  setTimeout(() => bus.disconnect(), 3500);
+}
+
+// Eine Phrase: Bordun auf dem Akkord, darüber eine Melodie (oder nur Bordun), danach eine Pause
+function musPhrase(T) {
+  const beat = 60 / (58 + Math.random() * 14);
+  if (MUS.phrases++ > 0 && Math.random() < 0.6) MUS.chord = musPick(MUS_CHORDS[MUS.chord].next);
+  const ch = MUS_CHORDS[MUS.chord];
+  const tone = p => ch.deg.includes(((p % 7) + 7) % 7);
+  const r = Math.random(), flute = r < 0.3, silent = MUS.phrases > 1 && r > 0.85;
+  let t = T + beat * (MUS.phrases === 1 ? 4 : 1 + Math.floor(Math.random() * 2));
+  if (!silent) {
+    let pos = musPick([0, 1, 2, 3, 4, 5, 6, 7].filter(tone));
+    const n = 5 + Math.floor(Math.random() * 6);
+    if (!flute) musPluck(t, ch.root + 12, 0.32);
+    for (let i = 0; i < n; i++) {
+      const last = i === n - 1;
+      if (last) for (const d of [0, -1, 1, -2, 2]) if (tone(pos + d)) { pos += d; break; }
+      const d = last ? beat * (2 + Math.random()) : beat * musPick([0.5, 0.5, 1, 1, 1, 1.5, 2]);
+      const m = musDeg(pos);
+      if (flute) musFlute(t, midiHz(m + 12), d, 0.15);
+      else {
+        musPluck(t, m, 0.42);
+        if (d >= beat * 1.5 && Math.random() < 0.6) musPluck(t + 0.05, musDeg(pos - 2), 0.26);
+      }
+      t += d;
+      pos = clamp(pos + musPick([-2, -1, -1, -1, 0, 1, 1, 1, 2, 3, -3]), -2, 9);
+    }
+  } else t += beat * (6 + Math.random() * 4);
+  const end = t + beat * (3 + Math.random() * 7);
+  musDrone(T, end, ch);
+  MUS.next = end;
+}
+function musDrone(s, e, ch) {
+  const ac = MUS.ctx, g = ac.createGain(), lp = ac.createBiquadFilter(), lfo = ac.createOscillator(), lg = ac.createGain();
+  s = Math.max(ac.currentTime, s - 1.5); e += 2;
+  const fade = Math.min(3, (e - s) / 3);
+  lp.type = 'lowpass'; lp.frequency.value = 430; lp.Q.value = 0.4;
+  lfo.frequency.value = 0.09 + Math.random() * 0.06; lg.gain.value = 90; lfo.connect(lg); lg.connect(lp.frequency);
+  g.gain.setValueAtTime(0, s); g.gain.linearRampToValueAtTime(1, s + fade); g.gain.setValueAtTime(1, e - fade); g.gain.linearRampToValueAtTime(0, e);
+  lp.connect(g); g.connect(MUS.bus);
+  lfo.start(s); lfo.stop(e + 0.1);
+  for (const [m, vol, det] of [[ch.root, 0.05, -5], [ch.root, 0.05, 5], [ch.root + 7, 0.035, 0], [ch.root - 12, 0.045, 0]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = 'sawtooth'; o.frequency.value = midiHz(m); o.detune.value = det; og.gain.value = vol;
+    o.connect(og); og.connect(lp); o.start(s); o.stop(e + 0.1);
+  }
+}
+// Gezupfte Saite (Karplus-Strong), je Tonhöhe einmal berechnet
+function musString(m) {
+  if (MUS.strings[m]) return MUS.strings[m];
+  const ac = MUS.ctx, sr = ac.sampleRate, len = Math.floor(sr * 2.8);
+  const N = Math.max(2, Math.round(sr / midiHz(m) - 0.5));
+  const buf = ac.createBuffer(1, len, sr), y = buf.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < N; i++) { lp += ((Math.random() * 2 - 1) - lp) * 0.6; y[i] = lp; } // weicher Anschlag
+  y[N] = y[0] * 0.5;
+  for (let i = N + 1; i < len; i++) y[i] = (y[i - N] + y[i - N - 1]) * 0.4985;
+  for (let i = len - Math.floor(sr * 0.3), k = 0; i < len; i++, k++) y[i] *= 1 - k / (sr * 0.3);
+  return (MUS.strings[m] = buf);
+}
+function musPluck(t, m, v) {
+  const ac = MUS.ctx, src = ac.createBufferSource(), g = ac.createGain(), lp = ac.createBiquadFilter();
+  src.buffer = musString(m); lp.type = 'lowpass'; lp.frequency.value = 3200; g.gain.value = v;
+  src.connect(lp); lp.connect(g); musPan(g, (Math.random() - 0.5) * 0.5);
+  src.start(t);
+}
+function musFlute(t, f, d, v) {
+  const ac = MUS.ctx, o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), g2 = ac.createGain();
+  const vib = ac.createOscillator(), vg = ac.createGain(), e = t + d;
+  o.type = 'sine'; o.frequency.value = f; o2.type = 'triangle'; o2.frequency.value = f * 2; g2.gain.value = 0.1;
+  vib.frequency.value = 4.6 + Math.random() * 0.8;
+  vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(f * 0.006, t + Math.min(0.6, d));
+  vib.connect(vg); vg.connect(o.frequency);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.08);
+  g.gain.setValueAtTime(v, Math.max(t + 0.09, e - 0.12)); g.gain.exponentialRampToValueAtTime(0.0001, e + 0.15);
+  o.connect(g); o2.connect(g2); g2.connect(g); musPan(g, 0.15);
+  for (const x of [o, o2, vib]) { x.start(t); x.stop(e + 0.2); }
+  // Anblasgeräusch
+  const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), ng = ac.createGain();
+  n.buffer = MUS.noise; bp.type = 'bandpass'; bp.frequency.value = f * 1.5; bp.Q.value = 1.5;
+  ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(v * 0.25, t + 0.03); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  n.connect(bp); bp.connect(ng); ng.connect(MUS.bus); n.start(t, Math.random() * 2); n.stop(t + 0.2);
+}
+function musBirds(t) {
+  const ac = MUS.ctx, n = 2 + Math.floor(Math.random() * 5), f0 = 2600 + Math.random() * 1600, pan = (Math.random() - 0.5) * 1.4;
+  const up = Math.random() < 0.5;
+  for (let i = 0; i < n; i++) {
+    const s = t + i * (0.11 + Math.random() * 0.08), len = 0.05 + Math.random() * 0.06, f = f0 * (0.9 + Math.random() * 0.2);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.setValueAtTime(f, s); o.frequency.exponentialRampToValueAtTime(f * (up ? 1.35 : 0.7), s + len);
+    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.035, s + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, s + len);
+    o.connect(g); musPan(g, pan); o.start(s); o.stop(s + len + 0.02);
+  }
+}
+function musWind(t, v) {
+  const ac = MUS.ctx, n = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+  n.buffer = MUS.noise; n.loop = true; bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.7;
+  g.gain.value = v * 0.3; lfo.frequency.value = 0.07; lg.gain.value = v * 0.2; lfo.connect(lg); lg.connect(g.gain);
+  n.connect(bp); bp.connect(g); g.connect(MUS.bus);
+  n.start(t); lfo.start(t);
+  n.onended = () => { try { lfo.stop(); } catch (e) { /* schon gestoppt */ } };
+  return n;
+}
+function musPan(node, p) {
+  const ac = MUS.ctx;
+  if (ac.createStereoPanner) { const pn = ac.createStereoPanner(); pn.pan.value = p; node.connect(pn); pn.connect(MUS.bus); }
+  else node.connect(MUS.bus);
+}
+function setupMusic() {
+  const cycle = () => setMusic((MUS.lvl + 1) % MUS_LEVELS.length);
+  $('btnMusic').addEventListener('click', cycle);
+  $('btnMusicStart').addEventListener('click', cycle);
+  document.addEventListener('visibilitychange', musTick);
+  setInterval(musTick, 300);
+  renderMusic();
 }
 
 /* ============================ 12. MEHRSPIELER (INTERNET) ============================ */
@@ -7037,6 +7265,7 @@ function boot() {
   makeIcons();
   setupInput();
   setupTouch();
+  setupMusic();
   updateMenuButtons();
   // Beim Schließen des Tabs den aktuellen Stand sichern
   window.addEventListener('pagehide', () => { if (running && G && !G.over) { if (G.net) netSaveMP(); else saveGame('auto', true); } });

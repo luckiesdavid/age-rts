@@ -498,7 +498,7 @@ body.touch .touchKeys { display: block; }
       <button class="diff" data-m="winter">Winterland<small>Nadelwald, mehr Gold, kaum Beeren</small></button>
     </div>
     <div class="row">Karten-Seed: <input id="seedInput" type="text" placeholder="zufällig"></div>
-    <div class="ctlEdge"><button class="sbtn" id="btnMusicStart"></button></div>
+    <div class="ctlEdge"><button class="sbtn" id="btnSoundStart"></button> <button class="sbtn" id="btnMusicStart"></button></div>
     </div>
     <div class="startActs">
       <button class="bigbtn" id="btnStart">Spiel starten</button>
@@ -526,7 +526,6 @@ body.touch .touchKeys { display: block; }
       </div>
       <div class="ctlEdge"><button class="sbtn" id="btnEdgeStart"></button></div>
     </div>
-    <div class="ctlEdge"><button class="sbtn" id="btnSoundStart"></button></div>
     <div class="keys mouseKeys">
       <b>Touchpad:</b> <b>zwei Finger schieben</b> Kamera, <b>Pinch</b> Zoom, <b>Klick mit zwei Fingern</b> Befehl<br>
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
@@ -627,11 +626,11 @@ body.touch .touchKeys { display: block; }
       <button class="bigbtn" id="btnResume">Fortsetzen</button>
       <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
       <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
+      <button class="bigbtn alt" id="btnSound"></button>
       <button class="bigbtn alt" id="btnMusic"></button>
       <button class="bigbtn alt" id="btnDiff"></button>
       <button class="bigbtn alt deskOnly" id="btnCtrlMode"></button>
       <button class="bigbtn alt deskOnly" id="btnEdge"></button>
-      <button class="bigbtn alt" id="btnSound"></button>
       <button class="bigbtn alt hidden" id="btnSaveLater">Unterbrechen &amp; später weiterspielen</button>
       <button class="bigbtn alt quiet" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
     </div>
@@ -5522,18 +5521,27 @@ function jumpToAlert() {
 
 // Ton per WebAudio erzeugt (keine Tondateien). Browser, allen voran Safari/iOS, erlauben Ton erst nach
 // einer Nutzeraktion: der AudioContext wird deshalb beim ersten Tippen, Klicken oder Tastendruck angelegt.
+// Ein gemeinsamer AudioContext für Warnton und Hintergrundmusik. Ton: alles an / nur Angriffswarnung / aus.
 const SND_KEY = 'burgschiltberg.sound';
-const SND = { on: true, ctx: null, hornT: -1e9 };
-try { const c = JSON.parse(localStorage.getItem(SND_KEY)); if (c && c.on === false) SND.on = false; } catch (e) { /* ignorieren */ }
-function setSound(on) {
-  SND.on = on;
-  try { localStorage.setItem(SND_KEY, JSON.stringify({ on })); } catch (e) { /* ignorieren */ }
+const SND_MODES = { all: 'alles an', alert: 'nur Angriffswarnung', off: 'aus' };
+const SND = { mode: 'all', ctx: null, hornT: -1e9 };
+try {
+  const c = JSON.parse(localStorage.getItem(SND_KEY));
+  if (c && SND_MODES[c.mode]) SND.mode = c.mode; else if (c && c.on === false) SND.mode = 'off'; // alte Einstellung: Warnton aus
+} catch (e) { /* ignorieren */ }
+function setSound(mode) {
+  SND.mode = mode;
+  try { localStorage.setItem(SND_KEY, JSON.stringify({ mode })); } catch (e) { /* ignorieren */ }
   renderSound();
-  if (on) { audioUnlock(); SND.hornT = -1e9; setTimeout(() => playHorn(false), 60); } // Hörprobe
+  if (mode !== 'off') { audioUnlock(); SND.hornT = -1e9; setTimeout(() => playHorn(false), 60); } // Hörprobe
+  musTick();
 }
-function renderSound() { $('btnSound').textContent = $('btnSoundStart').textContent = 'Warnton bei Angriffen: ' + (SND.on ? 'an' : 'aus'); }
+function renderSound() {
+  $('btnSound').textContent = $('btnSoundStart').textContent = 'Ton: ' + SND_MODES[SND.mode];
+  renderMusic();
+}
 function audioUnlock() {
-  if (!SND.on) return;
+  if (SND.mode === 'off') return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   try {
@@ -5542,6 +5550,7 @@ function audioUnlock() {
       // ein stiller Puffer schaltet den Ton unter iOS frei
       const src = SND.ctx.createBufferSource(); src.buffer = SND.ctx.createBuffer(1, 1, 22050); src.connect(SND.ctx.destination); src.start(0);
     }
+    if (MUS.ctx !== SND.ctx) musInit(SND.ctx);
     if (SND.ctx.state !== 'running') SND.ctx.resume();
   } catch (e) { /* ohne Ton weiter */ }
 }
@@ -5550,10 +5559,11 @@ for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener
 // soft: ein einzelner, leiserer Stoß (Angriff auf einen Verbündeten). Höchstens alle 8 s.
 function playHorn(soft) {
   const ac = SND.ctx;
-  if (!SND.on || !ac || ac.state !== 'running' || document.hidden) return;
+  if (SND.mode === 'off' || !ac || ac.state !== 'running' || document.hidden) return;
   const now = performance.now();
   if (now - SND.hornT < 8000) return;
   SND.hornT = now;
+  musicDuck(soft ? 1.5 : 2.5); // Musik kurz leiser, damit das Horn klar heraussticht
   const out = ac.createGain(); out.gain.value = soft ? 0.6 : 1.1; out.connect(ac.destination);
   const notes = soft ? [[0, 0.55]] : [[0, 0.3], [0.4, 1.05]];
   const t0 = ac.currentTime + 0.03, f = 174.6; // F3
@@ -5860,8 +5870,9 @@ function setupInput() {
   $('btnDiff').addEventListener('click', () => { const d = Object.keys(DIFFS); setDifficulty(d[(d.indexOf(G.diff) + 1) % d.length]); });
   $('btnEdgeStart').addEventListener('click', () => setCtrl(null, !CTRL.edge));
   renderCtrl();
-  $('btnSound').addEventListener('click', () => setSound(!SND.on));
-  $('btnSoundStart').addEventListener('click', () => setSound(!SND.on));
+  const nextSound = () => { const m = Object.keys(SND_MODES); setSound(m[(m.indexOf(SND.mode) + 1) % m.length]); };
+  $('btnSound').addEventListener('click', nextSound);
+  $('btnSoundStart').addEventListener('click', nextSound);
   renderSound();
   $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
   $('btnLoadStart').addEventListener('click', () => openSaveScreen('load'));
@@ -5963,11 +5974,11 @@ function updateDiffUI() {
    Ruhige, mittelalterlich klingende Musik, laufend per WebAudio erzeugt (keine Tondateien): ein leiser Bordun
    wie bei einer Drehleier, darüber kurze Melodien in D-dorisch auf Laute (gezupfte Saite, Karplus-Strong) oder
    Blockflöte, dazwischen lange Pausen, Vogelrufe und etwas Wind, alles mit Hall. Jede Phrase wird neu gewürfelt
-   (Math.random, nur Ton, nie Spielzustand), deshalb wiederholt sich nichts. Läuft nur im Spiel, im Pausenmenü
-   leiser. Lautstärke in vier Stufen im Start- und Pausenmenü. Browser (vor allem Safari/iOS) erlauben Ton erst
-   nach einer Nutzeraktion, daher wird der AudioContext beim ersten Tippen, Klicken oder Tastendruck angelegt. */
+   (Math.random, nur Ton, nie Spielzustand), deshalb wiederholt sich nichts. Läuft nur im Spiel und nur bei
+   „Ton: alles an“, im Pausenmenü leiser. Lautstärke in drei Stufen im Start- und Pausenmenü. Nutzt den
+   AudioContext des Warntons (SND.ctx, angelegt in audioUnlock). */
 const MUS_KEY = 'burgschiltberg.music';
-const MUS_LEVELS = [['aus', 0], ['leise', 0.5], ['mittel', 0.85], ['laut', 1.3]];
+const MUS_LEVELS = [['leise', 0.5], ['mittel', 0.85], ['laut', 1.3]];
 const MUS_VOL = 0.9; // Gesamtpegel, bewusst deutlich unter dem Warnton
 const MUS_SCALE = [0, 2, 3, 5, 7, 9, 10]; // dorisch
 // Akkorde als Stufen der Tonleiter (0 = D), Grundton des Borduns als MIDI-Note, mögliche Nachfolger
@@ -5978,7 +5989,7 @@ const MUS_CHORDS = [
   { deg: [3, 5, 0], root: 43, next: [0, 1] },             // G-Dur
   { deg: [4, 6, 1], root: 45, next: [0, 2] },             // a-Moll
 ];
-const MUS = { lvl: 2, ctx: null, master: null, dry: null, bus: null, playing: false, next: 0, chord: 0, phrases: 0,
+const MUS = { lvl: 1, ctx: null, master: null, dry: null, bus: null, playing: false, next: 0, chord: 0, phrases: 0,
   birdT: 0, wind: null, strings: {}, noise: null, fac: 1, duckT: 0, map: '' };
 try { const c = JSON.parse(localStorage.getItem(MUS_KEY)); if (c && c.lvl >= 0 && c.lvl < MUS_LEVELS.length) MUS.lvl = c.lvl; } catch (e) { /* ignorieren */ }
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
@@ -5989,23 +6000,11 @@ function setMusic(lvl) {
   MUS.lvl = lvl;
   try { localStorage.setItem(MUS_KEY, JSON.stringify({ lvl })); } catch (e) { /* ignorieren */ }
   renderMusic();
-  if (lvl > 0) musUnlock();
   musGain(0.4);
   musTick();
 }
-function renderMusic() { $('btnMusic').textContent = $('btnMusicStart').textContent = 'Musik: ' + MUS_LEVELS[MUS.lvl][0]; }
-function musUnlock() {
-  if (!MUS.lvl) return;
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return;
-  try {
-    if (!MUS.ctx) {
-      musInit(new AC());
-      // ein stiller Puffer schaltet den Ton unter iOS frei
-      const src = MUS.ctx.createBufferSource(); src.buffer = MUS.ctx.createBuffer(1, 1, 22050); src.connect(MUS.ctx.destination); src.start(0);
-    }
-    if (MUS.ctx.state !== 'running') MUS.ctx.resume();
-  } catch (e) { /* ohne Musik weiter */ }
+function renderMusic() {
+  for (const b of [$('btnMusic'), $('btnMusicStart')]) { b.textContent = 'Musik: ' + MUS_LEVELS[MUS.lvl][0]; b.classList.toggle('hidden', SND.mode !== 'all'); }
 }
 // Feste Signalkette: Stimmen → bus → trocken + Hall → master → Ausgang (auch für OfflineAudioContext nutzbar)
 function musInit(ac) {
@@ -6036,7 +6035,7 @@ function musGain(tc) {
 function musicDuck(sec) { MUS.duckT = performance.now() + sec * 1000; musGain(0.05); }
 
 function musTick() {
-  const want = MUS.lvl > 0 && running && G && !G.over && !document.hidden;
+  const want = SND.mode === 'all' && running && G && !G.over && !document.hidden;
   const ac = MUS.ctx;
   if (!ac) return;
   if (!want) { if (MUS.playing) musStop(); return; }
@@ -6177,7 +6176,6 @@ function musPan(node, p) {
   else node.connect(MUS.bus);
 }
 function setupMusic() {
-  for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, musUnlock, { capture: true, passive: true });
   const cycle = () => setMusic((MUS.lvl + 1) % MUS_LEVELS.length);
   $('btnMusic').addEventListener('click', cycle);
   $('btnMusicStart').addEventListener('click', cycle);

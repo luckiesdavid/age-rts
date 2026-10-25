@@ -2793,8 +2793,8 @@ function aiBuildings(ai) {
   for (const [type, minV, minT] of plan) if (nv >= minV && t >= minT) want[type] = (want[type] || 0) + 1;
   if (ai.d.smith && nv >= 14) want.blacksmith = 1;
   if (ai.diff !== 'easy' && nv >= 20 && t >= 420) want.market = 1;
-  if (ai.diff === 'hard' && p.age >= 2 && p.res.stone >= 650) want.keep = 1;
   if (ai.diff !== 'easy' && p.age >= 2 && p.res.stone >= BUILDINGS.castle.cost.stone) want.castle = 1;
+  if (ai.diff === 'hard' && p.age >= 2 && p.res.stone >= 650 && aiBuildingCount(ai, 'castle')) want.keep = 1; // erst die Burg, dann der Bergfried
   for (const type in want) {
     if (type === 'siege' && !ai.d.siege) continue;
     if (BUILDINGS[type].age > p.age) continue;

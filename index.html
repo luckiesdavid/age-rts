@@ -148,6 +148,10 @@ html, body {
 #mpLink { margin: 8px auto 0; padding: 7px 10px; max-width: 100%; overflow-wrap: anywhere; font: 14px monospace; user-select: all;
   background: #fbf3dd; border: 1px solid #9c7c4a; border-radius: 4px; }
 #mpLobby { margin-top: 10px; text-align: center; }
+#mpResume { margin: 0 0 12px; }
+#netLost { background: rgba(8,6,3,.55); }
+#netLostHint { max-width: 520px; margin: 4px auto 6px; font-size: 14px; opacity: .85; }
+.mpLinkSmall { margin-top: 6px; font: 13px monospace; overflow-wrap: anywhere; user-select: all; }
 #netWait { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 25; pointer-events: none;
   background: rgba(20,14,8,.85); border: 1px solid #a5463a; padding: 8px 18px; border-radius: 4px; font-size: 16px; }
 .stats { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; }
@@ -250,6 +254,11 @@ html, body {
   <div class="panel">
     <h1 style="font-size:40px">MEHRSPIELER</h1>
     <h2>1 gegen 1 über das Internet – ihr müsst nicht im selben Netz sein</h2>
+    <div id="mpResume" class="slot hidden">
+      <div class="meta" id="mpResumeMeta"></div>
+      <button class="sbtn" id="btnMPResume">Fortsetzen</button>
+      <button class="sbtn del" id="btnMPResumeDel" title="Löschen">✕</button>
+    </div>
     <div class="mpCols">
       <div>
         <b>Spiel erstellen</b><br><small>Du erhältst einen Code für deinen Mitspieler.</small><br>
@@ -278,6 +287,15 @@ html, body {
 </div>
 <div id="netWait" class="hidden">Warte auf Mitspieler …</div>
 
+<div id="netLost" class="screen hidden">
+  <div class="panel center">
+    <h1 style="font-size:36px">Verbindung unterbrochen</h1>
+    <h2><span id="netLostSub">Das Spiel ist angehalten. Verbinde neu …</span> <span id="netLostTime"></span></h2>
+    <div id="netLostHint"></div>
+    <button class="bigbtn alt" id="btnNetLostQuit">Speichern &amp; Hauptmenü</button>
+  </div>
+</div>
+
 <div id="endScreen" class="screen hidden">
   <div class="panel center">
     <h1 id="endTitle" class="endTitle">Sieg!</h1>
@@ -295,6 +313,7 @@ html, body {
     <button class="bigbtn alt" id="btnResume">Fortsetzen</button>
     <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
     <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
+    <button class="bigbtn alt hidden" id="btnSaveLater">Unterbrechen &amp; später weiterspielen</button>
     <button class="bigbtn alt" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
   </div>
 </div>
@@ -1841,8 +1860,9 @@ function execBuild(p, c) {
    eingeplant und an alle verschickt; ein Turn startet erst, wenn die Befehle aller Spieler da sind. */
 const TURN_TICKS = 3;   // 3 Ticks = 100 ms pro Turn
 const HASH_EVERY = 10;  // Prüfsumme jede Sekunde, um auseinanderlaufende Simulationen zu erkennen
-function createLockstep(n, me, delay, send) {
-  const L = { n, me, delay, send, turn: 0, inbox: new Map(), out: [], hashes: new Map(), remoteHashes: new Map(), desync: -1, maxRecv: delay - 1 };
+// e = Epoche: wird nach jedem Neuaufsetzen (Spielstand übertragen) erhöht, damit alte Nachrichten nicht in den neuen Ablauf geraten
+function createLockstep(n, me, delay, send, e) {
+  const L = { n, me, delay, send, e: e | 0, turn: 0, inbox: new Map(), out: [], sent: [], hashes: new Map(), remoteHashes: new Map(), desync: -1, maxRecv: delay - 1 };
   for (let t = 0; t < delay; t++) L.inbox.set(t, Array.from({ length: n }, () => []));
   return L;
 }
@@ -1852,8 +1872,12 @@ function lsReceive(L, from, msg) {
   if (!msg || typeof msg.t !== 'number' || msg.t < L.turn || !Array.isArray(msg.c)) return;
   lsSlot(L, msg.t)[from] = msg.c;
   if (msg.t > L.maxRecv) L.maxRecv = msg.t;
-  if (msg.h) { L.remoteHashes.set(msg.h[0], msg.h[1]); lsCheck(L, msg.h[0]); }
+  // doppelt gelieferte (schon verglichene) Prüfsummen überspringen
+  if (msg.h && (msg.h[0] >= L.turn || L.hashes.has(msg.h[0]))) { L.remoteHashes.set(msg.h[0], msg.h[1]); lsCheck(L, msg.h[0]); }
 }
+// Nach einem Verbindungsabbruch: alle eigenen Turn-Nachrichten ab dem Turn, bei dem der Mitspieler steht, erneut liefern.
+// Der Mitspieler kann höchstens `delay` Turns hinter uns liegen, deshalb reicht ein kurzer Verlauf.
+function lsResendFrom(L, turn) { return L.sent.filter(m => m.t >= turn); }
 function lsReady(L) { const s = L.inbox.get(L.turn); if (!s) return false; for (let i = 0; i < L.n; i++) if (!s[i]) return false; return true; }
 function lsCheck(L, t) {
   if (!L.hashes.has(t) || !L.remoteHashes.has(t)) return;
@@ -1868,6 +1892,8 @@ function lsBeginTurn(L) {
   const msg = { t: T + L.delay, c: JSON.parse(JSON.stringify(L.out)) }; L.out = [];
   if (T % HASH_EVERY === 0) { const h = stateHash(); L.hashes.set(T, h); msg.h = [T, h]; lsCheck(L, T); }
   lsSlot(L, msg.t)[L.me] = msg.c;
+  L.sent.push(msg);
+  while (L.sent.length && L.sent[0].t < T - L.delay - 2) L.sent.shift();
   L.send(msg);
   L.turn++;
 }
@@ -4207,7 +4233,9 @@ function setupInput() {
   $('btnPause').addEventListener('click', () => togglePause());
   $('btnMenu').addEventListener('click', () => { if (!paused) togglePause(); });
   $('btnResume').addEventListener('click', () => togglePause());
-  $('btnQuit').addEventListener('click', () => { running = false; paused = false; $('pauseScreen').classList.add('hidden'); netClose(true); showMenu(); });
+  $('btnQuit').addEventListener('click', () => { if (G && G.net) deleteMPSave(); running = false; paused = false; $('pauseScreen').classList.add('hidden'); netClose(true); showMenu(); });
+  $('btnSaveLater').addEventListener('click', () => netSaveLater(false));
+  $('btnNetLostQuit').addEventListener('click', () => { netSaveMP(); running = false; paused = false; netClose(false); showMenu(); });
   document.querySelectorAll('.diff').forEach(b => b.addEventListener('click', () => {
     b.parentNode.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
   }));
@@ -4220,7 +4248,9 @@ function setupInput() {
   $('btnNew').addEventListener('click', () => { $('endScreen').classList.add('hidden'); netClose(true); showMenu(); });
   $('btnMP').addEventListener('click', showMPScreen);
   $('btnMPBack').addEventListener('click', () => { netClose(true); $('mpScreen').classList.add('hidden'); showMenu(); });
-  $('btnHost').addEventListener('click', netHost);
+  $('btnHost').addEventListener('click', () => netHost());
+  $('btnMPResume').addEventListener('click', netResumeSaved);
+  $('btnMPResumeDel').addEventListener('click', () => { if (confirm('Unterbrochenes Mehrspieler-Spiel wirklich löschen?')) { deleteMPSave(); renderMPResume(); } });
   $('btnJoin').addEventListener('click', () => netJoin());
   $('btnMPStart').addEventListener('click', netStartAsHost);
 }
@@ -4277,12 +4307,17 @@ const NET_PREFIX = 'burgfeld-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // Öffentliche Adresse des Spiels (GitHub Pages) für Einladungslinks, wenn die Datei lokal geöffnet wurde
 const PUBLIC_URL = 'https://luckiesdavid.github.io/age-rts/';
-const NET = { peer: null, conn: null, role: null, me: 0, ls: null, code: '', ping: 0, pingT: null, stallT: 0, desyncShown: false, ready: false };
+const NET = { peer: null, conn: null, role: null, me: 0, ls: null, code: '', ping: 0, pingT: null, stallT: 0, desyncShown: false, ready: false,
+  lastRecv: 0, recon: null, reconT: null, resume: null, rx: null, early: [] };
+const NET_TIMEOUT = 5000;  // so lange (ms) ohne Nachricht gilt die Verbindung als abgebrochen
+const NET_RETRY = 2500;    // Abstand (ms) zwischen Wiederverbindungsversuchen
+const MP_SAVE_EVERY = 30;  // Sekunden Spielzeit zwischen Zwischenständen
+const ST_CHUNK = 7000;     // Spielstand in Stücken übertragen (PeerJS erlaubt je Nachricht knapp 16 KB, Anführungszeichen werden maskiert)
 
 function mpStatus(text, err) { const el = $('mpStatus'); el.innerHTML = text; el.classList.toggle('err', !!err); }
 function showMPScreen() {
   $('startScreen').classList.add('hidden'); $('mpScreen').classList.remove('hidden'); $('mpLobby').classList.add('hidden');
-  mpStatus(''); $('mpPing').textContent = '';
+  mpStatus(''); $('mpPing').textContent = ''; renderMPResume();
   const m = /(?:^|[#&])join=([A-Za-z0-9]{6})/.exec(location.hash);
   if (m) $('joinCode').value = m[1].toUpperCase();
 }
@@ -4330,41 +4365,72 @@ function netErrorText(e) {
   return 'Verbindungsfehler: ' + ((e && (e.message || e.type)) || e);
 }
 function netSend(msg) { if (NET.conn && NET.conn.open) NET.conn.send(msg); }
+// sayBye: true = 'bye' (Spiel verlassen) oder eine andere Abschiedsnachricht wie 'later'
 function netClose(sayBye) {
-  if (sayBye) netSend({ k: 'bye' });
+  if (sayBye) netSend({ k: sayBye === true ? 'bye' : sayBye });
   clearInterval(NET.pingT); NET.pingT = null;
+  netStopRecon();
   const peer = NET.peer, conn = NET.conn;
-  NET.peer = null; NET.conn = null; NET.ls = null; NET.role = null; NET.ready = false;
-  // kurz warten, damit 'bye' noch rausgeht
+  NET.peer = null; NET.conn = null; NET.ls = null; NET.role = null; NET.ready = false; NET.resume = null; NET.rx = null; NET.early = [];
+  // kurz warten, damit die letzte Nachricht noch rausgeht
   setTimeout(() => { try { conn && conn.close(); } catch (e) {} try { peer && peer.destroy(); } catch (e) {} }, sayBye ? 300 : 0);
 }
-function setMPBusy(busy) { $('btnHost').disabled = busy; $('btnJoin').disabled = busy; }
+function setMPBusy(busy) { $('btnHost').disabled = busy; $('btnJoin').disabled = busy; $('btnMPResume').disabled = busy; }
+function netDelay() {
+  // Eingabeverzögerung an die gemessene Latenz anpassen (mind. 2 Turns = 200 ms)
+  const turnMs = TURN_TICKS * SIM_DT * 1000;
+  return clamp(Math.ceil((NET.ping / 2 + 60) / turnMs) + 1, 2, 8);
+}
 
-async function netHost() {
+// Der Ersteller meldet sich mit einer festen ID (aus dem Code) an. So bleibt der Einladungslink
+// auch nach einem Abbruch oder Neuladen gültig, und der Mitspieler kann einfach erneut anklopfen.
+function netHostPeer(code, onOpen, onFail) {
+  const peer = new Peer(NET_PREFIX + code.toLowerCase(), peerOptions());
+  NET.peer = peer;
+  peer.on('open', () => { if (peer === NET.peer) onOpen(); });
+  peer.on('connection', conn => { if (peer === NET.peer) netIncoming(conn); });
+  peer.on('disconnected', () => netPeerDisconnected(peer));
+  peer.on('error', e => { if (peer === NET.peer) onFail(e); });
+}
+function netGuestPeer(onOpen, onFail) {
+  const peer = new Peer(peerOptions());
+  NET.peer = peer;
+  peer.on('open', () => { if (peer === NET.peer && onOpen) onOpen(); });
+  peer.on('disconnected', () => netPeerDisconnected(peer));
+  peer.on('error', e => { if (peer === NET.peer && onFail) onFail(e); });
+}
+// Verbindung zum Vermittlungsserver verloren: wieder anmelden (die direkte Verbindung zum Mitspieler ist davon unabhängig)
+function netPeerDisconnected(peer) {
+  setTimeout(() => { if (peer === NET.peer && peer.disconnected && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }, 1000);
+}
+function netShowInvite(code, head, foot) {
+  mpStatus(`${head}
+    <div id="mpLink">${inviteLink(code)}</div>
+    <button class="bigbtn alt" id="btnCopyLink">Link kopieren</button>${navigator.share ? ' <button class="bigbtn alt" id="btnShareLink">Teilen …</button>' : ''}
+    <br><small>Oder Code eingeben lassen: <span id="mpCode">${code}</span></small><br>${foot}`);
+  $('btnCopyLink').addEventListener('click', () => copyInvite(code));
+  if (navigator.share) $('btnShareLink').addEventListener('click', () => navigator.share({ title: 'Burgfeld', text: 'Spiel mit mir Burgfeld!', url: inviteLink(code) }).catch(() => {}));
+}
+
+// resume: unterbrochenes Spiel aus dem Zwischenspeicher fortsetzen ({ meta })
+async function netHost(resume) {
   netClose(false); setMPBusy(true);
   mpStatus('Verbinde mit dem Vermittlungsserver …');
   try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
+  NET.role = 'host'; NET.me = 0; NET.resume = resume || null;
   const tryOpen = attempt => {
-    const code = genCode();
-    const peer = new Peer(NET_PREFIX + code.toLowerCase(), peerOptions());
-    NET.peer = peer; NET.role = 'host'; NET.me = 0;
-    peer.on('open', () => {
+    // beim Fortsetzen den alten Code wiederverwenden, damit der alte Einladungslink weiter funktioniert
+    const code = resume && attempt < 6 ? resume.meta.code : genCode();
+    netHostPeer(code, () => {
       NET.code = code;
-      mpStatus(`Schick deinem Mitspieler diesen Einladungslink – ein Klick genügt zum Beitreten:
-        <div id="mpLink">${inviteLink(code)}</div>
-        <button class="bigbtn alt" id="btnCopyLink">Link kopieren</button>${navigator.share ? ' <button class="bigbtn alt" id="btnShareLink">Teilen …</button>' : ''}
-        <br><small>Oder Code eingeben lassen: <span id="mpCode">${code}</span></small><br>Warte auf Verbindung …`);
-      $('btnCopyLink').addEventListener('click', () => copyInvite(code));
-      if (navigator.share) $('btnShareLink').addEventListener('click', () => navigator.share({ title: 'Burgfeld', text: 'Spiel mit mir Burgfeld!', url: inviteLink(code) }).catch(() => {}));
-    });
-    peer.on('connection', conn => {
-      if (NET.conn) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 500); }); return; }
-      netAttach(conn);
-    });
-    peer.on('error', e => {
-      if (peer !== NET.peer) return;
-      if (e.type === 'unavailable-id' && attempt < 4) { peer.destroy(); tryOpen(attempt + 1); return; }
-      if (running && NET.conn) return; // Signalserver weg, Spiel läuft direkt weiter
+      const changed = resume && code !== resume.meta.code ? '<b>Neuer Code</b> – bitte den Link erneut schicken. ' : '';
+      netShowInvite(code, resume ? changed + 'Dein Mitspieler kann über den bisherigen Einladungslink wieder beitreten:' : 'Schick deinem Mitspieler diesen Einladungslink – ein Klick genügt zum Beitreten:',
+        resume ? 'Warte auf Mitspieler – das Spiel geht automatisch weiter, sobald er verbunden ist …' : 'Warte auf Verbindung …');
+    }, e => {
+      if (e.type === 'unavailable-id' && attempt < 8) { // Code noch belegt (z. B. gerade erst neu geladen): kurz warten
+        NET.peer.destroy(); setTimeout(() => { if (NET.role === 'host' && !NET.conn) tryOpen(attempt + 1); }, resume ? 1500 : 0); return;
+      }
+      if (NET.recon || (running && G && G.net)) return; // im laufenden Spiel kümmert sich das Neuverbinden darum
       mpStatus(netErrorText(e), true); setMPBusy(false);
     });
   };
@@ -4376,57 +4442,212 @@ async function netJoin() {
   netClose(false); setMPBusy(true);
   mpStatus('Verbinde …');
   try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
-  const peer = new Peer(peerOptions());
-  NET.peer = peer; NET.role = 'guest'; NET.me = 1; NET.code = code;
-  peer.on('open', () => {
+  NET.role = 'guest'; NET.me = 1; NET.code = code;
+  netGuestPeer(() => {
     mpStatus('Trete Spiel ' + code + ' bei …');
-    const conn = peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
+    const conn = NET.peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
     netAttach(conn);
     setTimeout(() => { if (NET.conn === conn && !conn.open) { mpStatus('Keine Verbindung möglich (Zeitüberschreitung). Firewall oder Netzwerk blockiert WebRTC.', true); setMPBusy(false); } }, 20000);
-  });
-  peer.on('error', e => { if (peer !== NET.peer || (running && NET.conn && NET.conn.open)) return; mpStatus(netErrorText(e), true); setMPBusy(false); });
+  }, e => { if (NET.recon || (running && G && G.net)) return; mpStatus(netErrorText(e), true); setMPBusy(false); });
+}
+function netIncoming(conn) {
+  // Im laufenden Spiel darf sich der bisherige Mitspieler jederzeit neu verbinden (geprüft im 'hello'), sonst ist das Spiel voll
+  if (NET.conn && !(running && G && G.net)) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 500); }); return; }
+  netAttach(conn);
 }
 function netAttach(conn) {
-  NET.conn = conn;
-  conn.on('open', () => {
-    netSend({ k: 'hello', v: NET_PROTO });
-    clearInterval(NET.pingT);
-    NET.pingT = setInterval(() => netSend({ k: 'ping', ts: performance.now() }), 2000);
-    netSend({ k: 'ping', ts: performance.now() });
+  if (!NET.conn) NET.conn = conn;
+  conn.on('open', () => { conn.send(netHello()); if (NET.conn === conn) netStartPing(); });
+  conn.on('data', m => {
+    if (conn !== NET.conn) {
+      // neue Verbindung, bevor die alte als abgebrochen erkannt wurde: übernehmen, wenn es derselbe Mitspieler ist
+      if (!(m && m.k === 'hello' && running && G && G.net && m.gid === G.gid)) return;
+      const old = NET.conn; NET.conn = conn; try { old.close(); } catch (e) {}
+      netStartPing();
+    }
+    netOnData(m);
   });
-  conn.on('data', netOnData);
   conn.on('close', () => { if (NET.conn === conn) netLost(); });
   conn.on('error', () => { if (NET.conn === conn) netLost(); });
 }
-function netLost() {
-  const wasRunning = running && G && G.net && !G.over;
-  netClose(false);
-  if (wasRunning) { G.over = { winner: -2, lost: true, time: G.time }; showEnd(); }
-  else if (!$('mpScreen').classList.contains('hidden')) { mpStatus('Verbindung zum Mitspieler getrennt.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
+function netHello() {
+  const live = !!(running && G && G.net && !G.over && NET.ls), save = mpSaveMeta();
+  return { k: 'hello', v: NET_PROTO, live, gid: live ? G.gid : null, tick: live ? G.tick : 0, turn: live ? NET.ls.turn : 0, e: live ? NET.ls.e : 0,
+    save: save ? { gid: save.gid, tick: save.tick } : null };
 }
+function netStartPing() {
+  NET.lastRecv = performance.now();
+  clearInterval(NET.pingT);
+  NET.pingT = setInterval(() => {
+    netSend({ k: 'ping', ts: performance.now() });
+    // WebRTC bemerkt einen Abbruch oft erst nach 30 s – kommt einige Sekunden lang nichts an, gilt die Verbindung als getrennt
+    if (NET.conn && NET.ready && performance.now() - NET.lastRecv > NET_TIMEOUT) {
+      const c = NET.conn; NET.conn = null; try { c.close(); } catch (e) {}
+      netLost();
+    }
+  }, 1000);
+  netSend({ k: 'ping', ts: performance.now() });
+}
+function netLost() {
+  NET.conn = null; NET.ready = false; NET.rx = null;
+  clearInterval(NET.pingT); NET.pingT = null;
+  if (running && G && G.net && !G.over && NET.ls) { netBeginRecon(); return; }
+  if (NET.role === 'host' && NET.peer && !NET.peer.destroyed && !running) { // Lobby: weiter auf den Mitspieler warten
+    $('mpLobby').classList.add('hidden');
+    netShowInvite(NET.code, 'Verbindung zum Mitspieler getrennt. Er kann über den Einladungslink erneut beitreten:', 'Warte auf Verbindung …');
+    return;
+  }
+  netClose(false);
+  if (!$('mpScreen').classList.contains('hidden')) { mpStatus('Verbindung zum Mitspieler getrennt.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
+}
+
+/* ---------- Kurze Abbrüche: anhalten, neu verbinden, Befehle nachholen ----------
+   Das Spiel steht von selbst, weil der Lockstep auf die Befehle des Mitspielers wartet. Der Gast klopft
+   regelmäßig neu beim Ersteller an, der Ersteller hält seine Kennung beim Vermittlungsserver offen.
+   Haben danach beide das Spiel noch im Speicher, liefert jede Seite ihre fehlenden Turn-Nachrichten nach.
+   Hat eine Seite neu geladen, überträgt der Ersteller den kompletten Spielstand. */
+function netBeginRecon() {
+  if (NET.recon) return;
+  NET.recon = { since: performance.now(), lastTry: performance.now(), conn: null, connT: 0 };
+  netSaveMP();
+  $('netLostSub').textContent = 'Das Spiel ist angehalten. Verbinde neu …';
+  $('netLostHint').innerHTML = NET.role === 'host'
+    ? `Der Spielstand ist gesichert. Hat dein Mitspieler die Seite neu geladen, kann er über den Einladungslink wieder beitreten:<div class="mpLinkSmall">${inviteLink(NET.code)}</div>`
+    : 'Der Spielstand ist gesichert. Hat der Ersteller die Seite neu geladen, muss er unter <b>Mehrspieler → Fortsetzen</b> das Spiel wieder öffnen.';
+  $('netLost').classList.remove('hidden');
+  netReconUI();
+  NET.reconT = setInterval(netReconTick, 500);
+}
+function netStopRecon() {
+  clearInterval(NET.reconT); NET.reconT = null;
+  if (NET.recon && NET.recon.conn && NET.recon.conn !== NET.conn) try { NET.recon.conn.close(); } catch (e) {}
+  NET.recon = null;
+  $('netLost').classList.add('hidden');
+}
+function netReconUI() { if (NET.recon) $('netLostTime').textContent = fmtTime((performance.now() - NET.recon.since) / 1000); }
+function netReconTick() {
+  const R = NET.recon; if (!R) return;
+  netReconUI();
+  const now = performance.now();
+  if (NET.conn || now - R.lastTry < NET_RETRY) return;
+  R.lastTry = now;
+  const peer = NET.peer;
+  if (NET.role === 'host') { // Ersteller: Kennung beim Vermittlungsserver aktiv halten und auf den Gast warten
+    if (!peer || peer.destroyed) netHostPeer(NET.code, () => {}, e => { if (e.type === 'unavailable-id' && NET.peer) NET.peer.destroy(); });
+    else if (peer.disconnected) try { peer.reconnect(); } catch (e) {}
+    return;
+  }
+  if (!peer || peer.destroyed) { netGuestPeer(null, null); return; }
+  if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} return; }
+  if (!peer.open || (R.conn && now - R.connT < 8000)) return;
+  if (R.conn) try { R.conn.close(); } catch (e) {}
+  R.conn = peer.connect(NET_PREFIX + NET.code.toLowerCase(), { reliable: true, serialization: 'json' }); R.connT = now;
+  const conn = R.conn;
+  conn.on('open', () => { if (NET.recon && NET.recon.conn === conn && !NET.conn) { NET.conn = conn; netStartPing(); } conn.send(netHello()); });
+  conn.on('data', m => { if (NET.conn === conn) netOnData(m); });
+  conn.on('close', () => { if (NET.conn === conn) netLost(); });
+  conn.on('error', () => { if (NET.conn === conn) netLost(); });
+}
+
+function netOnHello(m) {
+  if (m.v !== NET_PROTO) { mpStatus('Dein Mitspieler nutzt eine andere Spielversion. Bitte beide dieselbe index.html verwenden.', true); netClose(false); setMPBusy(false); return; }
+  NET.ready = true;
+  if (running && G && G.net && !G.over && NET.ls) {
+    if (m.gid && m.gid !== G.gid) { netSend({ k: 'full' }); return; }
+    if (m.live && m.e === NET.ls.e) {
+      // beide haben das Spiel noch im Speicher: fehlende Turn-Nachrichten nachliefern, dann läuft es weiter
+      for (const t of lsResendFrom(NET.ls, m.turn)) netSend({ k: 't', t: t.t, c: t.c, h: t.h, e: NET.ls.e });
+      if (NET.recon) { netStopRecon(); notify('Verbindung wiederhergestellt.'); }
+      return;
+    }
+    // der Mitspieler hat neu geladen: der Ersteller schickt den aktuellen Spielstand
+    if (NET.role === 'host') netSendState(JSON.stringify(serializeGame()), Math.max(NET.ls.e, m.e | 0) + 1, NET.ls.delay);
+    else $('netLostSub').textContent = 'Spielstand wird abgeglichen …';
+    return;
+  }
+  if (NET.role === 'host') {
+    if (NET.resume) { netResumeAsHost(m); return; }
+    mpStatus('Mitspieler verbunden!'); $('mpLobby').classList.remove('hidden');
+    const msel = document.querySelector('#mapChoice .diff.sel'); $('mpMap').textContent = MAPS[msel ? msel.dataset.m : 'balanced'].name;
+  } else mpStatus('Verbunden! Warte, bis der Ersteller das Spiel startet …');
+}
+// Unterbrochenes Spiel fortsetzen: Der neuere der beiden Zwischenstände gewinnt (der Mitspieler hat
+// vielleicht länger weitergespielt oder das Spiel sogar noch offen).
+function netResumeAsHost(m) {
+  const meta = NET.resume.meta;
+  const theirs = m.gid === meta.gid ? m.tick : m.save && m.save.gid === meta.gid ? m.save.tick : -1;
+  mpStatus('Mitspieler verbunden – Spielstand wird abgeglichen …');
+  const e = (m.e | 0) + 1, delay = netDelay();
+  if (theirs > meta.tick) netSend({ k: 'pull', e, delay });
+  else netSendState(mpSaveData(), e, delay);
+}
+// Spielstand übertragen (in Stücken, weil eine DataChannel-Nachricht begrenzt ist); beide Seiten laden
+// danach exakt dieselben Daten und starten einen frischen Lockstep mit neuer Epoche.
+function netSendState(json, e, delay) {
+  if (!json) { mpStatus('Kein Spielstand zum Fortsetzen gefunden.', true); return; }
+  const n = Math.ceil(json.length / ST_CHUNK);
+  netSend({ k: 'sth', n, e, delay });
+  for (let i = 0; i < n; i++) netSend({ k: 'st', i, d: json.slice(i * ST_CHUNK, (i + 1) * ST_CHUNK) });
+  netApplyState(json, e, delay);
+}
+function netStateNow() { return running && G && G.net && !G.over ? JSON.stringify(serializeGame()) : mpSaveData(); }
+function netApplyState(json, e, delay) {
+  let data = null; try { data = JSON.parse(json); } catch (err) { /* unten */ }
+  if (!data || data.v !== SAVE_VER) { mpStatus('Der Spielstand konnte nicht übernommen werden.', true); return; }
+  const wasRunning = running && G && G.net;
+  const keep = wasRunning ? { x: cam.x, y: cam.y, zoom: cam.zoom, sel: UI.sel.map(x => x.id) } : null;
+  $('mpScreen').classList.add('hidden');
+  G = deserializeGame(data);
+  G.human = NET.me; G.net = true;
+  rebuildGrid();
+  NET.desyncShown = false; NET.stallT = 0; NET.resume = null; NET.rx = null;
+  NET.ls = createLockstep(2, NET.me, delay, msg => netSend({ k: 't', t: msg.t, c: msg.c, h: msg.h, e }), e);
+  const early = NET.early; NET.early = [];
+  for (const m of early) if (m.e === e) lsReceive(NET.ls, 1 - NET.me, m);
+  netStopRecon();
+  beginSession();
+  if (keep) {
+    cam.x = keep.x; cam.y = keep.y; cam.zoom = keep.zoom; clampCam();
+    setSelection(keep.sel.map(id => G.byId.get(id)).filter(x => alive(x) && x.owner === G.human));
+  } else {
+    const tc = G.buildings.find(b => !b.dead && b.owner === G.human && b.type === 'tc') || G.units.find(u => !u.dead && u.owner === G.human);
+    if (tc) { cam.zoom = 1; centerOn(tc.x + 1, tc.y + 1); setSelection([tc]); }
+  }
+  notify(wasRunning ? 'Spielstand abgeglichen – weiter geht\'s!' : 'Spiel fortgesetzt (Spielzeit ' + fmtTime(G.time) + ').');
+  netSaveMP();
+}
+
 function netOnData(m) {
   if (!m || typeof m !== 'object') return;
+  NET.lastRecv = performance.now();
   switch (m.k) {
-    case 't': if (NET.ls) lsReceive(NET.ls, 1 - NET.me, m); break;
-    case 'hello':
-      if (m.v !== NET_PROTO) { mpStatus('Dein Mitspieler nutzt eine andere Spielversion. Bitte beide dieselbe index.html verwenden.', true); netClose(false); setMPBusy(false); return; }
-      NET.ready = true;
-      if (NET.role === 'host') {
-        mpStatus('Mitspieler verbunden!'); $('mpLobby').classList.remove('hidden');
-        const msel = document.querySelector('#mapChoice .diff.sel'); $('mpMap').textContent = MAPS[msel ? msel.dataset.m : 'balanced'].name;
-      }
-      else mpStatus('Verbunden! Warte, bis der Ersteller das Spiel startet …');
+    case 't':
+      if (NET.ls && m.e === NET.ls.e) lsReceive(NET.ls, 1 - NET.me, m);
+      // gehört schon zum neu aufgesetzten Spiel, dessen Spielstand gerade noch ankommt
+      else if (!NET.ls || m.e > NET.ls.e) { NET.early.push(m); if (NET.early.length > 1000) NET.early.shift(); }
       break;
+    case 'hello': netOnHello(m); break;
     case 'ping': netSend({ k: 'pong', ts: m.ts }); break;
     case 'pong':
       NET.ping = Math.round(performance.now() - m.ts);
       if (!running) $('mpPing').textContent = 'Ping: ' + NET.ping + ' ms';
       if (running && G && G.net) $('diffLabel').textContent = 'Mehrspieler · Ping ' + NET.ping + ' ms · Seed ' + G.seed;
       break;
-    case 'start': if (NET.role === 'guest') netStartGame(m.seed, m.delay, MAPS[m.map] ? m.map : 'balanced'); break;
+    case 'start': if (NET.role === 'guest') netStartGame(m.seed, m.delay, MAPS[m.map] ? m.map : 'balanced', m.gid); break;
+    case 'pull': netSendState(netStateNow(), m.e, m.delay); break; // der Ersteller möchte unseren (neueren) Stand
+    case 'sth':
+      NET.rx = { n: m.n, e: m.e, delay: m.delay, parts: [] };
+      if (NET.recon) $('netLostSub').textContent = 'Spielstand wird abgeglichen …'; else if (!running) mpStatus('Spielstand wird übertragen …');
+      break;
+    case 'st':
+      if (!NET.rx || m.i !== NET.rx.parts.length) break;
+      NET.rx.parts.push(m.d);
+      if (NET.rx.parts.length === NET.rx.n) { const rx = NET.rx; NET.rx = null; netApplyState(rx.parts.join(''), rx.e, rx.delay); }
+      break;
     case 'pause': if (running && G && G.net) setPaused(!!m.on, true); break;
+    case 'later': if (running && G && G.net && !G.over) netSaveLater(true); break;
     case 'bye':
-      if (running && G && G.net && !G.over) { G.over = { winner: G.human, resign: true, time: G.time }; netClose(false); showEnd(); }
+      if (running && G && G.net && !G.over) { deleteMPSave(); G.over = { winner: G.human, resign: true, time: G.time }; netClose(false); showEnd(); }
       else { netClose(false); mpStatus('Dein Mitspieler hat das Spiel verlassen.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
       break;
     case 'full': mpStatus('Dieses Spiel ist bereits voll.', true); netClose(false); setMPBusy(false); break;
@@ -4436,18 +4657,57 @@ function netStartAsHost() {
   if (NET.role !== 'host' || !NET.ready) return;
   const txt = $('mpSeed').value.trim();
   const seed = txt ? (/^\d+$/.test(txt) ? +txt : hashStr(txt)) : Math.floor(Math.random() * 1e9);
-  // Eingabeverzögerung an die gemessene Latenz anpassen (mind. 2 Turns = 200 ms)
-  const turnMs = TURN_TICKS * SIM_DT * 1000;
-  const delay = clamp(Math.ceil((NET.ping / 2 + 60) / turnMs) + 1, 2, 8);
+  const delay = netDelay(), gid = genCode() + genCode();
   const msel = document.querySelector('#mapChoice .diff.sel'); const map = msel ? msel.dataset.m : 'balanced';
-  netSend({ k: 'start', seed, delay, map });
-  netStartGame(seed, delay, map);
+  netSend({ k: 'start', seed, delay, map, gid });
+  netStartGame(seed, delay, map, gid);
 }
-function netStartGame(seed, delay, map) {
+function netStartGame(seed, delay, map, gid) {
   $('mpScreen').classList.add('hidden');
-  NET.desyncShown = false; NET.stallT = 0;
-  NET.ls = createLockstep(2, NET.me, delay, msg => netSend({ k: 't', t: msg.t, c: msg.c, h: msg.h }));
+  NET.desyncShown = false; NET.stallT = 0; NET.early = [];
+  NET.ls = createLockstep(2, NET.me, delay, msg => netSend({ k: 't', t: msg.t, c: msg.c, h: msg.h, e: 0 }), 0);
   startGame(seed, null, map, { net: true, human: NET.me });
+  G.gid = gid || genCode(); // Kennung des Spiels, damit sich nur derselbe Mitspieler wieder verbinden kann
+  netSaveMP();
+}
+
+/* ---------- Zwischenspeicher für Mehrspieler ----------
+   Alle 30 s Spielzeit, beim Abbruch und beim Schließen des Tabs wird der Stand lokal gesichert.
+   Über Mehrspieler → Fortsetzen geht es später weiter (der neuere Stand beider Spieler gewinnt). */
+const MP_KEY = 'burgfeld.save.mp'; // wie SAVE_KEY + 'mp' (SAVE_KEY ist weiter unten definiert)
+function mpSaveMeta() { try { return JSON.parse(localStorage.getItem(MP_KEY + '.meta')); } catch (e) { return null; } }
+function mpSaveData() { try { return localStorage.getItem(MP_KEY); } catch (e) { return null; } }
+function netSaveMP() {
+  if (!G || !G.net || G.over || !G.gid) return;
+  G.nextMpSave = G.time + MP_SAVE_EVERY;
+  try {
+    const p = G.players[G.human];
+    localStorage.setItem(MP_KEY, JSON.stringify(serializeGame()));
+    localStorage.setItem(MP_KEY + '.meta', JSON.stringify({ date: Date.now(), time: G.time, tick: G.tick, map: G.map, seed: G.seed, gid: G.gid,
+      code: NET.code, role: G.human === 0 ? 'host' : 'guest', pop: p.pop, popCap: p.popCap }));
+  } catch (e) { console.error(e); }
+}
+function deleteMPSave() { try { localStorage.removeItem(MP_KEY); localStorage.removeItem(MP_KEY + '.meta'); } catch (e) { /* ignorieren */ } }
+// Beide hören auf und setzen das Spiel später fort
+function netSaveLater(fromOther) {
+  netSaveMP();
+  running = false; paused = false; $('pauseScreen').classList.add('hidden');
+  netClose(fromOther ? false : 'later');
+  showMenu(); showMPScreen();
+  mpStatus((fromOther ? 'Dein Mitspieler hat das Spiel unterbrochen. ' : '') + 'Der Spielstand ist gespeichert – ihr könnt hier später mit „Fortsetzen“ weiterspielen.');
+}
+function renderMPResume() {
+  const m = mpSaveMeta();
+  $('mpResume').classList.toggle('hidden', !m);
+  if (!m) return;
+  const col = PLAYER_COLORS[m.role === 'host' ? 0 : 1];
+  $('mpResumeMeta').innerHTML = `<b>Unterbrochenes Spiel</b> · Spielzeit ${fmtTime(m.time)}${MAPS[m.map] ? ' · ' + MAPS[m.map].name : ''}
+    <small>${fmtDate(m.date)} · du spielst <span style="color:${col.main}">${col.name}</span> · ${m.role === 'host' ? 'du hast es erstellt' : 'Code ' + m.code}</small>`;
+}
+function netResumeSaved() {
+  const m = mpSaveMeta(); if (!m) return;
+  if (m.role === 'host') netHost({ meta: m });
+  else { $('joinCode').value = m.code; netJoin(); }
 }
 
 /* ============================ 13. START & HAUPTSCHLEIFE ============================ */
@@ -4500,7 +4760,7 @@ function beginSession() {
   $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[G.diff].name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
   $('diffLabel').title = $('diffLabel').textContent;
   paused = false; running = true; acc = 0;
-  $('btnSaveMenu').classList.toggle('hidden', G.net); $('btnLoadMenu').classList.toggle('hidden', G.net);
+  $('btnSaveMenu').classList.toggle('hidden', G.net); $('btnLoadMenu').classList.toggle('hidden', G.net); $('btnSaveLater').classList.toggle('hidden', !G.net);
   G.nextAutosave = G.time + AUTOSAVE_EVERY;
 }
 
@@ -4665,23 +4925,29 @@ function frame(t) {
     // Mehrspieler: liegt der Mitspieler deutlich vorn, holt diese Seite schneller auf
     const maxN = L && L.maxRecv - L.turn > L.delay + 2 ? 10 : 5;
     if (maxN > 5) acc += SIM_DT * 2;
-    let stalled = false;
+    let stalled = false, desync = false;
     while (acc >= SIM_DT && n < maxN) {
       if (L && G.tick % TURN_TICKS === 0) {
         if (!lsReady(L)) { stalled = true; acc = Math.min(acc, SIM_DT); break; }
         lsBeginTurn(L);
-        if (L.desync >= 0 && !NET.desyncShown) { NET.desyncShown = true; notify('Die Spielzustände sind auseinandergelaufen (Desync). Bitte neu starten.', true); }
+        if (L.desync >= 0 && !NET.desyncShown) { desync = true; break; }
       }
       for (const u of G.units) { u.px = u.x; u.py = u.y; u.anim += SIM_DT; }
       simStep(SIM_DT); acc -= SIM_DT; n++;
     }
     if (n >= maxN && !stalled) acc = 0;
+    if (desync) { // Spielzustände auseinandergelaufen: der Ersteller überträgt seinen Stand, danach geht es synchron weiter
+      NET.desyncShown = true;
+      notify('Die Spielzustände waren auseinandergelaufen – sie werden neu abgeglichen.', true);
+      if (NET.role === 'host') netSendState(JSON.stringify(serializeGame()), L.e + 1, L.delay);
+    }
     NET.stallT = stalled ? NET.stallT + dt : 0;
-    $('netWait').classList.toggle('hidden', NET.stallT < 0.6);
+    $('netWait').classList.toggle('hidden', NET.stallT < 0.6 || !!NET.recon);
     renderAlpha = clamp(acc / SIM_DT, 0, 1);
     updateCamera(dt);
-    if (G.over) { refreshPanel(true); setTimeout(showEnd, 1200); if (!G.net) deleteSave('auto'); }
+    if (G.over) { refreshPanel(true); setTimeout(showEnd, 1200); if (!G.net) deleteSave('auto'); else deleteMPSave(); }
     else if (!G.net) autosaveTick();
+    else if (G.time >= G.nextMpSave) netSaveMP();
   } else $('netWait').classList.add('hidden');
   render();
   renderMinimap(dt);
@@ -4696,7 +4962,7 @@ function boot() {
   setupInput();
   updateMenuButtons();
   // Beim Schließen des Tabs den aktuellen Stand sichern
-  window.addEventListener('pagehide', () => { if (running && G && !G.over && !G.net) saveGame('auto', true); });
+  window.addEventListener('pagehide', () => { if (running && G && !G.over) { if (G.net) netSaveMP(); else saveGame('auto', true); } });
   requestAnimationFrame(frame);
   // Einladungslink (…#join=CODE): direkt beitreten
   if (/(?:^|[#&])join=[A-Za-z0-9]{6}/.test(location.hash)) { showMPScreen(); netJoin(); }

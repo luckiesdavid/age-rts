@@ -8,6 +8,8 @@ Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Graf
 
 `index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit wählen, optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
 
+**Speichern:** Im Pausenmenü (oder mit **F5** bzw. **Cmd/Ctrl + S**) gibt es drei Speicherplätze. Zusätzlich speichert das Spiel alle zwei Minuten Spielzeit und beim Schließen des Tabs automatisch. Im Startbildschirm setzt **Letzten Spielstand fortsetzen** den neuesten Stand fort, **Spiel laden** zeigt alle Plätze. Spielstände liegen im Speicher des Browsers (localStorage), also nur in dem Browser, in dem gespielt wurde.
+
 **Ziel:** Zerstöre alle gegnerischen Gebäude (Mauern zählen nicht) – oder sein Dorfzentrum und alle seine Einheiten. Umgekehrt verlierst du.
 
 ## Steuerung (Mac mit Maus oder Trackpad)
@@ -34,6 +36,7 @@ Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Graf
 | Entf / Backspace | Gebäude abreißen bzw. Einheit entlassen |
 | Esc | Bauen/Befehl abbrechen, Menü zurück, Auswahl aufheben |
 | Leertaste / P | Pause |
+| F5 oder Cmd/Ctrl + S | Speichern-Dialog |
 
 **Bauen:** Dorfbewohner auswählen, Menü **Wirtschaft (Q)**, **Militär (E)** oder **Verteidigung (R)** öffnen, Gebäude wählen und platzieren. Die Vorschau zeigt grün (möglich) oder rot (blockiert). Mit Shift bleibst du im Platzierungsmodus. Mehrere Dorfbewohner bauen schneller. Unfertige oder beschädigte eigene Gebäude werden per Rechtsklick weitergebaut bzw. repariert.
 

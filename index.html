@@ -624,7 +624,7 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '2.0';
+const GAME_VERSION = '2.1';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -1281,6 +1281,21 @@ function approachRect(u, ent, tx, ty, w, h, r, dt, failKey) {
   return u[failKey] > 2 ? 'fail' : 'moving';
 }
 
+// Letzte Annäherung: Ist die Einheit grob am Ziel (Rechteck), läuft sie noch dicht an die Kante heran,
+// damit sie sichtbar direkt am Baum, Stein oder an der Baustelle arbeitet. true = jetzt arbeiten.
+const WORK_GAP = 0.24; // Abstand Einheitenmitte – Kante beim Arbeiten (Radius Dorfbewohner 0,2)
+function closeIn(u, ent, tx, ty, w, h, d, dt) {
+  if (u.workAt === ent && d <= 0.6) return true; // schon am Arbeiten: kleines Wegschieben duldet sie
+  if (d <= WORK_GAP + 0.08) { u.workAt = ent; u.closeT = 0; return true; }
+  u.closeT = (u.closeT || 0) + dt;
+  if (u.closeT > 1.2) { u.workAt = ent; return true; } // Gedränge oder Hindernis: dann eben von hier
+  const px = clamp(u.x, tx, tx + w), py = clamp(u.y, ty, ty + h), k = WORK_GAP / d;
+  stopMoving(u);
+  moveTowards(u, px + (u.x - px) * k, py + (u.y - py) * k, dt, 0.04);
+  return false;
+}
+function leaveWork(u) { u.workAt = null; u.closeT = 0; }
+
 /* ---------- Befehle ---------- */
 function clearOrder(u) {
   if (u.order && u.order.t === 'gather' && u.order.res && u.order.res.kind === 'bld' && u.order.res.farmer === u.id) u.order.res.farmer = 0;
@@ -1617,8 +1632,13 @@ function updateGather(u, o, dt) {
   // Reichweite zur Quelle
   let near;
   if (r.kind === 'bld') near = distToRect(u.x, u.y, r.tx + 0.3, r.ty + 0.3, r.w - 0.6, r.h - 0.6) <= 0.05;
-  else near = distToRect(u.x, u.y, r.tx, r.ty, 1, 1) <= (r.block ? 0.95 : 0.4);
+  else {
+    const d = distToRect(u.x, u.y, r.tx, r.ty, 1, 1);
+    near = d <= (r.block ? 0.95 : 0.4);
+    if (near && r.block && !closeIn(u, r, r.tx, r.ty, 1, 1, d, dt)) return;
+  }
   if (!near) {
+    leaveWork(u);
     let st;
     if (r.kind === 'bld') st = approachRect(u, r, r.tx + 0.35, r.ty + 0.35, r.w - 0.7, r.h - 0.7, 0, dt, 'gFail');
     else st = approachRect(u, r, r.tx, r.ty, 1, 1, r.block ? 0.75 : 0.3, dt, 'gFail');
@@ -1648,7 +1668,8 @@ function updateBuild(u, o, dt) {
   const needWork = !b.built || b.hp < b.maxHp;
   if (!needWork) { clearOrder(u); afterBuilt(u, b); return; }
   const dd = distToRect(u.x, u.y, b.tx, b.ty, b.w, b.h);
-  if (dd <= 1.1 || (BUILDINGS[b.type].walkable && dd <= 0.2)) {
+  if (dd <= 1.1) {
+    if (!closeIn(u, b, b.tx, b.ty, b.w, b.h, dd, dt)) { u.bFail = 0; u.pathTarget = null; return; }
     stopMoving(u); u.bFail = 0; u.pathTarget = null;
     u.facing = Math.atan2(b.y - u.y, b.x - u.x); u.atkAnim = u.atkAnim > 0 ? u.atkAnim : 0.3;
     const def = BUILDINGS[b.type];
@@ -1666,6 +1687,7 @@ function updateBuild(u, o, dt) {
     }
     return;
   }
+  leaveWork(u);
   if (approachRect(u, b, b.tx, b.ty, b.w, b.h, 0.8, dt, 'bFail') === 'fail') { u.bFail = 0; clearOrder(u); autoNextBuild(u, b); }
 }
 function autoNextBuild(u, skip) {

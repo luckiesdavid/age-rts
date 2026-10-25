@@ -1456,6 +1456,13 @@ function orderAttack(u, t) {
   clearOrder(u);
   u.order = { t: 'attack', target: t };
 }
+// Bewachen: Militär folgt einer eigenen oder verbündeten Einheit und bekämpft Feinde in ihrer Nähe
+function canEscort(u, w) { return !!w && !w.dead && w.kind === 'unit' && w !== u && !w.def.gaia && allies(u.owner, w.owner); }
+function orderEscort(u, w) {
+  if (!u.def.military || !canEscort(u, w)) return;
+  clearOrder(u);
+  u.order = { t: 'escort', target: w, rt: -99, gx: w.x, gy: w.y };
+}
 function orderGather(u, r) {
   if (u.type !== 'villager') return;
   clearOrder(u);
@@ -1709,7 +1716,7 @@ function applyDamage(t, amount, src, by) {
   t.hp -= amount;
   // Angriffsmeldung (nur Anzeige und Ton, verändert den Spielzustand nicht)
   if (G.onHit && t.owner < GAIA) { const o = src ? src.owner : by; if (o !== undefined && o !== t.owner && !allies(o, t.owner)) G.onHit(t, o); }
-  if (t.kind === 'unit' && src && alive(src)) t.lastAttacker = src;
+  if (t.kind === 'unit' && src && alive(src)) { t.lastAttacker = src; t.hitBy = src; t.hitT = G.time; }
   if (t.kind === 'bld' && src && src.owner < GAIA) t.lastHit = G.time;
   if (t.hp <= 0) {
     const o = src ? src.owner : by;
@@ -1951,6 +1958,7 @@ function updateUnit(u, dt) {
     if (!canTarget(u, o.target)) { u.order = null; u.target = null; u.aggr = false; stopMoving(u); }
     else { engage(u, o.target, dt, true); return; }
   }
+  if (o && o.t === 'escort') { updateEscort(u, o, dt, combat); return; }
   if (o && o.t === 'move') {
     const st = followPath(u, dt);
     if (st === 'blocked') { u.path = null; requestPath(u, goalForPoint(o.x, o.y)); }
@@ -1992,6 +2000,64 @@ function updateUnit(u, dt) {
   }
   // untätig
   if (!o && u.path) { if (followPath(u, dt) === 'done') stopMoving(u); }
+}
+// Bewertung eines Feindes für einen Wächter: wer die bewachte Einheit angreift und nah an ihr ist, zuerst;
+// Ziele, die schon andere Wächter bekämpfen, weniger, damit sich die Wächter auf die Angreifer verteilen
+function escortScore(u, w, t, gx, gy) {
+  if (t.kind !== 'unit') return targetPriority(u, t) * 10 - dist(u.x, u.y, t.x, t.y) - 25;
+  let s = targetPriority(u, t) * 10 - dist(t.x, t.y, gx, gy) * 1.5 - dist(u.x, u.y, t.x, t.y) * 0.5;
+  if ((t.order && t.order.t === 'attack' && t.order.target === w) || t.target === w) s += 12;
+  let n = 0;
+  queryUnits(t.x, t.y, 6, o => { if (o !== u && o.target === t && o.order && o.order.t === 'escort' && o.order.target === w) n++; });
+  return s - n * 6;
+}
+function escortScan(u, w, gx, gy) {
+  let best = null, bs = -1e9;
+  const minR = u.def.minRange || 0;
+  if (!u.def.bldOnly) {
+    queryUnits(gx, gy, ESCORT_R, t => {
+      if (!canTarget(u, t) || dist(u.x, u.y, t.x, t.y) < minR) return;
+      const s = escortScore(u, w, t, gx, gy);
+      if (s > bs) { bs = s; best = t; }
+    });
+  }
+  if (!best && (u.def.bldOnly || u.def.siege)) { const b = scanForTarget(u, Math.min(u.def.sight, ESCORT_R), true); if (b) { best = b; bs = escortScore(u, w, b, gx, gy); } }
+  return best ? { t: best, s: bs } : null;
+}
+const ESCORT_R = 7;      // Umkreis um die bewachte Einheit, in dem Feinde bekämpft werden
+const ESCORT_LEASH = 11; // weiter entfernt sich der Wächter beim Verfolgen nicht von ihr
+function updateEscort(u, o, dt, combat) {
+  const w = o.target;
+  if (!canEscort(u, w)) { u.order = null; u.target = null; stopMoving(u); u.guard = { x: u.x, y: u.y }; return; }
+  // sitzt die bewachte Einheit in einem Gebäude, wird dieses bewacht
+  const b = w.inside, gx = b ? b.x : w.x, gy = b ? b.y : w.y;
+  const near = (e, r) => dist(e.x, e.y, gx, gy) <= r + (e.kind === 'bld' ? Math.max(e.w, e.h) / 2 : 0);
+  if (combat) {
+    if (u.target && !inAttackRange(u, u.target) && (dist(u.x, u.y, gx, gy) > ESCORT_LEASH || !near(u.target, ESCORT_R + 2))) u.target = null;
+    if (!u.target) {
+      // zuerst, wer die bewachte Einheit gerade angreift, dann wer einen selbst angreift
+      const a = w.hitBy && G.time - w.hitT < 3 ? w.hitBy : null;
+      if (a && canTarget(u, a) && (a.kind === 'unit' || u.def.siege) && near(a, ESCORT_R + 2)) u.target = a;
+      else if (u.lastAttacker && canTarget(u, u.lastAttacker) && near(u.lastAttacker, ESCORT_R + 2)) u.target = u.lastAttacker;
+      u.lastAttacker = null;
+    }
+    u.scanT -= dt;
+    if (u.scanT <= 0) {
+      u.scanT = 0.45 + rnd() * 0.15;
+      const t = escortScan(u, w, gx, gy);
+      if (t && (!u.target || t.s > escortScore(u, w, u.target, gx, gy) + 3)) u.target = t.t;
+    }
+    if (u.target) { engage(u, u.target, dt, false); return; }
+  }
+  // folgen: nachplanen, wenn die bewachte Einheit ein Stück weitergezogen ist
+  const d = dist(u.x, u.y, gx, gy), reach = b ? Math.max(b.w, b.h) / 2 + 1.2 : 1.8;
+  if (d <= reach) { if (u.pathTarget === w) stopMoving(u); return; }
+  const moved = dist(o.gx, o.gy, gx, gy) > 1.5;
+  if (!u.pending && ((u.pathTarget !== w && G.time - o.rt > 0.3) || (!u.path && G.time - o.rt > 0.5) || (moved && G.time - o.rt > 0.8))) {
+    o.rt = G.time; o.gx = gx; o.gy = gy; u.pathTarget = w;
+    requestPath(u, b ? goalForRect(b.tx, b.ty, b.w, b.h, 1.2) : goalForRect(gx, gy, 0, 0, 1.2));
+  }
+  if (followPath(u, dt) === 'blocked') u.path = null;
 }
 function combatResponseVillager(u) { u.lastAttacker = null; return false; }
 
@@ -2627,6 +2693,13 @@ function execAct(p, c) {
     const cant = units.filter(u => !(u.order && u.order.t === 'attack'));
     if (cant.length) groupMove(cant, target.x, target.y, false);
     return;
+  }
+  // eigene oder verbündete Einheit: Militär bewacht sie
+  if (target && target.kind === 'unit' && !target.def.gaia && allies(p, target.owner)) {
+    const guards = units.filter(u => u.def.military && canEscort(u, target));
+    for (const u of guards) orderEscort(u, target);
+    units = units.filter(u => guards.indexOf(u) < 0);
+    if (!units.length) return;
   }
   // Eigene Burg / eigener Bergfried: hineingehen (Dorfbewohner reparieren zuerst, falls beschädigt)
   // Turm / Steinmauer / Steintor: Fernkämpfer beziehen oben Stellung, auf Mauern verteilt auf die Nachbarstücke
@@ -4931,9 +5004,20 @@ function render() {
       ctx.globalAlpha = 1;
     } else if (e.type === 'order') {
       const s = w2s(e.x, e.y); const f = e.t / e.dur;
-      ctx.strokeStyle = e.ref === 'attack' ? 'rgba(255,90,70,' + (1 - f) + ')' : 'rgba(150,255,130,' + (1 - f) + ')'; ctx.lineWidth = 2;
+      ctx.strokeStyle = e.ref === 'attack' ? 'rgba(255,90,70,' + (1 - f) + ')' : e.ref === 'guard' ? 'rgba(120,190,255,' + (1 - f) + ')' : 'rgba(150,255,130,' + (1 - f) + ')'; ctx.lineWidth = 2;
       const r = (10 - f * 6) * z; ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
     }
+  }
+  // von ausgewählten Einheiten bewachte Einheiten: blauer Ring
+  const guarded = new Set();
+  for (const e of UI.sel) if (e.kind === 'unit' && !e.dead && e.order && e.order.t === 'escort' && e.order.target && !e.order.target.dead) guarded.add(e.order.target.inside || e.order.target);
+  if (guarded.size) {
+    ctx.strokeStyle = 'rgba(120,190,255,0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([4 * z, 3 * z]);
+    for (const g of guarded) {
+      const p = g.kind === 'unit' ? lerpPos(g) : g, s = w2s(p.x, p.y), r = (g.kind === 'unit' ? 13 : 10 + Math.max(g.w, g.h) * 14) * z;
+      ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.setLineDash([]);
   }
   // Lebensbalken
   for (const it of drawList) {
@@ -5314,6 +5398,7 @@ function refreshCommands() {
   if (units.length && !UI.buildMenu) {
     const combat = units.some(u => u.def.military);
     if (combat) box.appendChild(cmdButton({ text: 'Angriffs-\nbewegung', hotkey: 'A', active: UI.cmdMode === 'amove', tip: () => '<div class="tt">Angriffsbewegung (A)</div>Zum Ziel bewegen und unterwegs alle Feinde angreifen. Danach auf die Karte klicken.', onClick: () => { UI.cmdMode = 'amove'; refreshCommands(); } }));
+    if (combat) box.appendChild(cmdButton({ text: 'Bewachen', hotkey: 'G', active: UI.cmdMode === 'escort', tip: () => '<div class="tt">Bewachen (G)</div>Eine eigene oder verbündete Einheit begleiten und Feinde in ihrer Nähe angreifen. Danach die Einheit anklicken.' + (IS_TOUCH ? '' : '<br><i>Auch per Rechtsklick auf die Einheit.</i>'), onClick: () => { UI.cmdMode = 'escort'; refreshCommands(); } }));
     box.appendChild(cmdButton({ text: 'Halt', hotkey: 'X', tip: () => '<div class="tt">Halt (X)</div>Alle Befehle abbrechen.', onClick: () => issue({ c: 'stop', ids: selOwnUnits().map(u => u.id) }) }));
     box.appendChild(cmdButton({ text: 'Löschen', hotkey: 'Entf', tip: () => '<div class="tt">Einheit entlassen (Entf)</div>Ausgewählte Einheiten werden entfernt.', onClick: () => deleteSelection() }));
   }
@@ -5428,7 +5513,8 @@ function refreshPanel(force) {
         if (e.carry) state += ` (trägt ${e.carry} ${RES_DE[e.carryType]})`;
         if (e.idleNoDrop) state += ' – kein Lager vorhanden!';
       } else if (!d.gaia) {
-        state = e.target ? 'Kämpft' : o ? (o.t === 'amove' ? 'Angriffsbewegung' : o.t === 'attack' ? 'Greift an' : 'Unterwegs') : 'Bereit';
+        state = e.target ? 'Kämpft' : o ? (o.t === 'amove' ? 'Angriffsbewegung' : o.t === 'attack' ? 'Greift an' : o.t === 'escort' ? 'Bewacht ' + o.target.def.name : 'Unterwegs') : 'Bereit';
+        if (e.target && o && o.t === 'escort') state += ' (bewacht ' + o.target.def.name + ')';
       }
       info.innerHTML = `<div class="selTitle"><img src="${ICONS[e.type]}">${d.name}</div>
         <div class="hpbar"><div style="width:${e.hp / e.maxHp * 100}%"></div></div>
@@ -5786,11 +5872,19 @@ function commandAt(sx, sy, attackMove) {
   // Markierung sofort anzeigen (im Mehrspieler kommt die Ausführung leicht verzögert)
   const units = own.filter(e => e.kind === 'unit');
   const enemy = target && target.owner !== undefined && foes(G.human, target.owner);
+  if (target && target.kind === 'unit' && !target.def.gaia && allies(G.human, target.owner) && units.some(u => u.def.military && u !== target)) { addEffect('order', target.x, target.y, 'guard'); return; }
   const onTarget = target && units.some(u => u.type === 'villager') && (target.kind === 'res' || target.type === 'deer' || (target.kind === 'bld' && target.owner === G.human));
   if (!units.length) { if (own.some(e => e.kind === 'bld' && BUILDINGS[e.type].trains)) addEffect('order', w.x, w.y, 'move'); }
   else if (attackMove) addEffect('order', w.x, w.y, 'attack');
   else if (enemy) addEffect('order', target.x, target.y, 'attack');
   else addEffect('order', onTarget ? target.x : w.x, onTarget ? target.y : w.y, 'move');
+}
+// Bewachen-Modus: nur eine eigene oder verbündete Einheit ist ein gültiges Ziel
+function escortAt(sx, sy) {
+  const t = pickAt(sx, sy);
+  if (!(t && t.kind === 'unit' && !t.def.gaia && allies(G.human, t.owner) && selOwnUnits().some(u => u.def.military && u !== t))) { notifyLocal('Wähle eine eigene oder verbündete Einheit zum Bewachen.'); return false; }
+  commandAt(sx, sy, false);
+  return true;
 }
 // Spielzustand ändern: im Einzelspieler sofort, im Mehrspieler über den Lockstep
 function issue(cmd) {
@@ -5838,6 +5932,7 @@ function setupInput() {
       else commitPlacing(e.shiftKey);
       return;
     }
+    if (UI.cmdMode === 'escort') { if (escortAt(e.clientX, e.clientY) && !e.shiftKey) UI.cmdMode = null; refreshCommands(); return; }
     if (UI.cmdMode === 'amove' || INPUT.keys.has('a') && selOwnUnits().some(u => u.def.military)) {
       commandAt(e.clientX, e.clientY, true);
       if (!e.shiftKey) UI.cmdMode = null; refreshCommands();
@@ -6858,6 +6953,7 @@ function touchToggle(t) {
 }
 function touchTap(x, y) {
   if (UI.cmdMode === 'amove') { commandAt(x, y, true); UI.cmdMode = null; refreshCommands(); return; }
+  if (UI.cmdMode === 'escort') { if (escortAt(x, y)) UI.cmdMode = null; refreshCommands(); return; }
   const t = pickAt(x, y), now = performance.now();
   const dbl = t && now - TOUCH.lastTapT < 350 && TOUCH.lastTapId === t.id;
   TOUCH.lastTapT = now; TOUCH.lastTapId = t ? t.id : null;

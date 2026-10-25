@@ -169,6 +169,7 @@ html, body {
 .panel h3::after { background: linear-gradient(90deg, #a8854c, transparent); }
 .diffs { display: flex; gap: 10px; justify-content: center; }
 #mapChoice { flex-wrap: wrap; } #mapChoice .diff { flex: 1 1 22%; }
+#diffChoice { flex-wrap: wrap; } #diffChoice .diff { flex: 1 1 17%; }
 .diff {
   position: relative; flex: 1; min-width: 0; padding: 12px 8px 11px; cursor: pointer; text-align: center; color: var(--ink);
   font: 700 15px/1.2 Cinzel, Georgia, serif; letter-spacing: .03em;
@@ -413,7 +414,7 @@ body.touch .touchKeys { display: block; }
   .panel h1 { font-size: 36px; letter-spacing: .08em; }
   .panel h1.sm { font-size: 26px; }
   .diffs { gap: 6px; }
-  #mapChoice .diff { flex-basis: 30%; }
+  #mapChoice .diff, #diffChoice .diff { flex-basis: 30%; }
   .diff { padding: 10px 3px; font-size: 11.5px; letter-spacing: 0; }
   .diff small { font-size: 11px; }
   .plist { gap: 5px; } .plc { font-size: 11.5px; padding: 8px 2px 6px; } .plc .team { font-size: 10.5px; }
@@ -475,6 +476,8 @@ body.touch .touchKeys { display: block; }
     <div class="startOpts">
     <h3>Schwierigkeit des Gegners</h3>
     <div class="diffs" id="diffChoice">
+      <button class="diff" data-d="beginner">Anfänger<small>kleines Heer, greift spät an</small></button>
+      <button class="diff" data-d="veryeasy">Sehr leicht<small>wenige, kleine Angriffe</small></button>
       <button class="diff" data-d="easy">Leicht<small>gemächlich, keine Mauern</small></button>
       <button class="diff sel" data-d="medium">Mittel<small>Türme, Palisaden, Rammen</small></button>
       <button class="diff" data-d="hard">Schwer<small>Steinmauern, Katapulte</small></button>
@@ -853,16 +856,26 @@ const MAPS = {
   steppe: { name: 'Steppe', forest: 0.82, lakes: 0.6, rocks: 2, extraGold: 0, edge: 0.25, herds: 4, connect: true, pal: 'steppe' },
   winter: { name: 'Winterland', forest: 0.55, lakes: 1.2, rocks: 5, extraGold: 1, berries: 4, herds: 2, tree: 4, connect: true, pal: 'snow' },
 };
+// lvl: Rangfolge der Stufen (0 = Anfänger … 4 = Schwer), maxArmy: höchstens so viele Militäreinheiten auf einmal,
+// milFrom: vorher kein Militär (außer bei Bedrohung)
 const DIFFS = {
-  easy: { name: 'Leicht', gather: 0.8, vills: 18, firstAttack: 600, waveSize: 6, waveGrow: 2, waveInterval: 240,
+  beginner: { name: 'Anfänger', lvl: 0, gather: 0.6, vills: 12, firstAttack: 900, waveSize: 4, waveGrow: 1, waveInterval: 360, maxArmy: 6, milFrom: 540,
     walls: null, towers: 0, siege: false, catapults: false, maxBuild: 1, startBonus: 0, buildQueue: 1,
-    ages: [[480, 14], [1260, 20]], smith: 0,
+    ages: [[900, 12]], smith: 0,
+    milPlan: [['barracks', 10, 0], ['range', 12, 600]] },
+  veryeasy: { name: 'Sehr leicht', lvl: 1, gather: 0.7, vills: 15, firstAttack: 780, waveSize: 5, waveGrow: 1, waveInterval: 300, maxArmy: 10, milFrom: 420,
+    walls: null, towers: 0, siege: false, catapults: false, maxBuild: 1, startBonus: 0, buildQueue: 1,
+    ages: [[660, 13], [1500, 18]], smith: 0,
+    milPlan: [['barracks', 10, 0], ['range', 13, 300], ['stable', 16, 720]] },
+  easy: { name: 'Leicht', lvl: 2, gather: 0.75, vills: 18, firstAttack: 660, waveSize: 6, waveGrow: 1, waveInterval: 270, maxArmy: 14, milFrom: 300,
+    walls: null, towers: 0, siege: false, catapults: false, maxBuild: 1, startBonus: 0, buildQueue: 1,
+    ages: [[540, 14], [1260, 20]], smith: 0,
     milPlan: [['barracks', 10, 0], ['range', 14, 0], ['stable', 17, 420]] },
-  medium: { name: 'Mittel', gather: 1.0, vills: 28, firstAttack: 450, waveSize: 10, waveGrow: 3, waveInterval: 200,
+  medium: { name: 'Mittel', lvl: 3, maxArmy: 999, gather: 1.0, vills: 28, firstAttack: 450, waveSize: 10, waveGrow: 3, waveInterval: 200,
     walls: 'palisade', wallTime: 300, towers: 2, towerTime: 360, siege: true, siegeTime: 540, catapults: false, maxBuild: 2,
     startBonus: 0, buildQueue: 2, ages: [[300, 16], [780, 24], [1560, 28]], smith: 2,
     milPlan: [['barracks', 9, 0], ['range', 12, 0], ['stable', 15, 0], ['siege', 18, 480]] },
-  hard: { name: 'Schwer', gather: 1.18, vills: 38, firstAttack: 330, waveSize: 12, waveGrow: 4, waveInterval: 170,
+  hard: { name: 'Schwer', lvl: 4, maxArmy: 999, gather: 1.18, vills: 38, firstAttack: 330, waveSize: 12, waveGrow: 4, waveInterval: 170,
     walls: 'wall', wallTime: 300, towers: 3, towerTime: 300, siege: true, siegeTime: 420, catapults: true, maxBuild: 3,
     startBonus: 100, buildQueue: 2, ages: [[240, 16], [600, 25], [1140, 32]], smith: 3,
     milPlan: [['barracks', 8, 0], ['range', 10, 0], ['stable', 13, 0], ['siege', 16, 360], ['barracks', 22, 540], ['range', 26, 600]] },
@@ -2771,7 +2784,7 @@ function aiEconomy(ai) {
     if (p.res.gold >= ai.saving.gold) ratio.gold *= 0.3;
   }
   if (p.age >= 2) { ratio.gold += 0.06; ratio.wood -= 0.04; }
-  if (p.age >= 2 && ai.diff !== 'easy' && !aiBuildingCount(ai, 'castle')) { ratio.stone += 0.07; ratio.food -= 0.04; } // für die Burg
+  if (p.age >= 2 && ai.d.lvl >= 3 && !aiBuildingCount(ai, 'castle')) { ratio.stone += 0.07; ratio.food -= 0.04; } // für die Burg
   // Vorräte berücksichtigen: Überschuss senkt, Mangel erhöht den Anteil
   for (const k of RES_TYPES) {
     if (ratio[k] <= 0) continue;
@@ -2926,9 +2939,9 @@ function aiBuildings(ai) {
   const want = {};
   for (const [type, minV, minT] of plan) if (nv >= minV && t >= minT) want[type] = (want[type] || 0) + 1;
   if (ai.d.smith && nv >= 14) want.blacksmith = 1;
-  if (ai.diff !== 'easy' && nv >= 20 && t >= 420) want.market = 1;
-  if (ai.diff !== 'easy' && p.age >= 2 && p.res.stone >= BUILDINGS.castle.cost.stone) want.castle = 1;
-  if (ai.diff === 'hard' && p.age >= 2 && p.res.stone >= 650 && aiBuildingCount(ai, 'castle')) want.keep = 1; // erst die Burg, dann der Bergfried
+  if (ai.d.lvl >= 3 && nv >= 20 && t >= 420) want.market = 1;
+  if (ai.d.lvl >= 3 && p.age >= 2 && p.res.stone >= BUILDINGS.castle.cost.stone) want.castle = 1;
+  if (ai.d.lvl >= 4 && p.age >= 2 && p.res.stone >= 650 && aiBuildingCount(ai, 'castle')) want.keep = 1; // erst die Burg, dann der Bergfried
   for (const type in want) {
     if (type === 'siege' && !ai.d.siege) continue;
     if (BUILDINGS[type].age > p.age) continue;
@@ -3043,8 +3056,8 @@ function aiMilitary(ai) {
     for (const ws of aiBlds(ai, 'siege')) {
       if (ws.queue.length >= 1) continue;
       const late = p.age >= 2;
-      const wantRams = (ai.diff === 'hard' ? 3 : 2) - (late && ai.diff === 'hard' ? 1 : 0), wantCats = ai.d.catapults && late ? 2 : 0;
-      const wantTreb = late && ai.diff !== 'easy' ? 1 : 0;
+      const wantRams = (ai.d.lvl >= 4 ? 3 : 2) - (late && ai.d.lvl >= 4 ? 1 : 0), wantCats = ai.d.catapults && late ? 2 : 0;
+      const wantTreb = late && ai.d.lvl >= 3 ? 1 : 0;
       if (cnt.ram < wantRams && canPay(UNITS.ram.cost)) { queueUnit(ws, 'ram'); cnt.ram++; }
       else if (cnt.trebuchet < wantTreb && canPay(UNITS.trebuchet.cost)) { queueUnit(ws, 'trebuchet'); cnt.trebuchet++; }
       else if (cnt.catapult < wantCats && canPay(UNITS.catapult.cost)) { queueUnit(ws, 'catapult'); cnt.catapult++; }
@@ -3061,10 +3074,15 @@ function aiMilitary(ai) {
     return { ut: best, v: bv };
   };
   const blds = aiBlds(ai).filter(b => b.type === 'barracks' || b.type === 'range' || b.type === 'stable' || b.type === 'castle');
+  // leichte Stufen: Heeresgröße begrenzen (lebende plus in Ausbildung) und erst später mit Militär beginnen
+  let mil = aiUnits(ai, u => u.def.military).length;
+  for (const b of blds) mil += b.queue.length;
+  const maxArmy = t < (ai.d.milFrom || 0) && !ai.threat ? 0 : ai.d.maxArmy;
   const picks = blds.map(b => ({ b, ...pick(b) })).filter(x => x.ut).sort((a, b) => a.v - b.v);
   for (const { b, ut } of picks) {
+    if (mil >= maxArmy) break;
     if (b.queue.length >= ai.d.buildQueue || !canPay(UNITS[ut].cost)) continue;
-    queueUnit(b, ut); cnt[ut]++;
+    queueUnit(b, ut); cnt[ut]++; mil++;
   }
   // Sammelpunkt Militär: vor der Basis
   const tc = aiTC(ai);

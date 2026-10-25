@@ -1,12 +1,14 @@
 # Burgfeld
 
+**▶ [Jetzt im Browser spielen](https://luckiesdavid.github.io/age-rts/)** – ohne Download, einfach den Link öffnen.
+
 Ein isometrisches Echtzeit-Strategiespiel für den Browser: 1 gegen 1 gegen eine KI oder online gegen einen anderen Menschen. Das Spielprinzip lehnt sich an Age of Empires IV an: Baue eine Wirtschaft mit vier Rohstoffen auf, steige mit Wahrzeichen durch vier Zeitalter auf, erforsche Verbesserungen, stelle eine Armee mit den richtigen Kontern auf und zerstöre die Wahrzeichen des Gegners.
 
 Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Grafiken oder Build-Schritte (nur der Mehrspielermodus lädt die Netzwerkbibliothek PeerJS nach); alle Gebäude, Einheiten und das Gelände werden prozedural auf dem Canvas gezeichnet.
 
 ## Starten
 
-`index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit und die Karte wählen (**Wüste**: Sand, Oasen mit Palmen, wenig Holz, ein zusätzliches Goldvorkommen · **Ausgeglichen**: Wiesen, Wälder und Seen · **Waldland**: dichte Wälder mit Lichtungen), optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
+Am einfachsten direkt im Browser: **https://luckiesdavid.github.io/age-rts/** öffnen. Alternativ `index.html` herunterladen und per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit und die Karte wählen (**Wüste**: Sand, Oasen mit Palmen, wenig Holz, ein zusätzliches Goldvorkommen · **Ausgeglichen**: Wiesen, Wälder und Seen · **Waldland**: dichte Wälder mit Lichtungen), optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
 
 **Speichern:** Im Pausenmenü (oder mit **F5** bzw. **Cmd/Ctrl + S**) gibt es drei Speicherplätze. Zusätzlich speichert das Spiel alle zwei Minuten Spielzeit und beim Schließen des Tabs automatisch. Im Startbildschirm setzt **Letzten Spielstand fortsetzen** den neuesten Stand fort, **Spiel laden** zeigt alle Plätze. Spielstände liegen im Speicher des Browsers (localStorage), also nur in dem Browser, in dem gespielt wurde.
 

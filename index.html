@@ -5197,7 +5197,7 @@ function loadPeerJS() {
    STUN findet die öffentliche Adresse hinter dem Router. Klappt keine direkte Verbindung (z. B. Mobilfunk,
    strenge Firewalls), läuft sie über einen TURN-Relay. Die TURN-Server von PeerJS sind oft nicht erreichbar,
    deshalb kann ein eigener Metered-Zugang eingetragen werden (im Spiel, per #turn=app:key oder hier fest). */
-const METERED_APP = '', METERED_KEY = '';
+const METERED_APP = 'aoe-burg', METERED_KEY = 'JyCFAnseTQVVAsSSfv8mQ_eCE9trTfH36QjJ3vnLWk9Yb_om'; // Metered-Zugang des Projekts (für den Browser gedacht)
 const STUN_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
 const PEERJS_TURN = { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' };
 function turnConfig() {

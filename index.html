@@ -136,6 +136,17 @@ html, body {
 .keys { font-size: 13px; line-height: 1.55; columns: 2; column-gap: 26px; }
 .keys b { color: #5a2a14; }
 .endTitle { font-size: 60px !important; }
+.mpCols { display: flex; gap: 16px; }
+.mpCols > div { flex: 1; padding: 12px; border: 1px solid #b89a63; border-radius: 6px; background: rgba(255,255,255,.18); text-align: center; }
+.mpCols .bigbtn.alt { margin-top: 8px; }
+.mpCols input { width: 110px; padding: 6px 8px; font-family: monospace; font-size: 18px; letter-spacing: 3px; text-transform: uppercase;
+  text-align: center; border: 1px solid #9c7c4a; border-radius: 4px; background: #fbf3dd; }
+#mpStatus { margin-top: 14px; min-height: 22px; text-align: center; font-size: 15px; }
+#mpStatus.err { color: #8a1d12; }
+#mpCode { font: bold 34px monospace; letter-spacing: 6px; color: #5a2a14; user-select: all; }
+#mpLobby { margin-top: 10px; text-align: center; }
+#netWait { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 25; pointer-events: none;
+  background: rgba(20,14,8,.85); border: 1px solid #a5463a; padding: 8px 18px; border-radius: 4px; font-size: 16px; }
 .stats { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; }
 .stats td, .stats th { padding: 5px 8px; border-bottom: 1px solid #c4a874; text-align: right; }
 .stats td:first-child, .stats th:first-child { text-align: left; }
@@ -181,6 +192,7 @@ html, body {
     </div>
     <div class="row">Karten-Seed: <input id="seedInput" type="text" placeholder="zufällig"></div>
     <button class="bigbtn" id="btnStart">Spiel starten</button>
+    <div style="text-align:center"><button class="bigbtn alt" id="btnMP">Mehrspieler über das Internet</button></div>
     <h3>Steuerung</h3>
     <div class="keys">
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
@@ -197,6 +209,38 @@ html, body {
   </div>
 </div>
 
+<div id="mpScreen" class="screen hidden">
+  <div class="panel">
+    <h1 style="font-size:40px">MEHRSPIELER</h1>
+    <h2>1 gegen 1 über das Internet – ihr müsst nicht im selben Netz sein</h2>
+    <div class="mpCols">
+      <div>
+        <b>Spiel erstellen</b><br><small>Du erhältst einen Code für deinen Mitspieler.</small><br>
+        <button class="bigbtn alt" id="btnHost">Erstellen</button>
+      </div>
+      <div>
+        <b>Spiel beitreten</b><br><small>Code deines Mitspielers eingeben.</small><br>
+        <input id="joinCode" maxlength="6" placeholder="CODE" autocomplete="off" spellcheck="false"><br>
+        <button class="bigbtn alt" id="btnJoin">Beitreten</button>
+      </div>
+    </div>
+    <div id="mpStatus"></div>
+    <div id="mpLobby" class="hidden">
+      <div id="mpPing" style="font-size:13px;opacity:.75"></div>
+      <div class="row">Karten-Seed: <input id="mpSeed" type="text" placeholder="zufällig"></div>
+      <button class="bigbtn" id="btnMPStart">Spiel starten</button>
+    </div>
+    <div style="text-align:center"><button class="bigbtn alt" id="btnMPBack">Zurück</button></div>
+    <h3>So funktioniert's</h3>
+    <div class="keys" style="columns:1">
+      Die Verbindung läuft direkt zwischen euren Browsern (WebRTC). Zum Verbinden wird kurz der öffentliche
+      PeerJS-Vermittlungsdienst genutzt; wenn keine direkte Verbindung möglich ist (strenge Firewall/NAT),
+      läuft sie über einen Relay-Server. Der Ersteller spielt <b style="color:#2f6fd6">Blau</b>, der Beitretende <b style="color:#d23a2e">Rot</b>.
+    </div>
+  </div>
+</div>
+<div id="netWait" class="hidden">Warte auf Mitspieler …</div>
+
 <div id="endScreen" class="screen hidden">
   <div class="panel center">
     <h1 id="endTitle" class="endTitle">Sieg!</h1>
@@ -210,7 +254,7 @@ html, body {
 <div id="pauseScreen" class="screen hidden">
   <div class="panel center">
     <h1 style="font-size:40px">Pausiert</h1>
-    <h2>Leertaste oder P zum Fortsetzen</h2>
+    <h2 id="pauseBy">Leertaste oder P zum Fortsetzen</h2>
     <button class="bigbtn alt" id="btnResume">Fortsetzen</button>
     <button class="bigbtn alt" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
   </div>
@@ -225,7 +269,8 @@ html, body {
      4. WEGFINDUNG      5. EINHEITEN         6. GEBÄUDE
      7. KAMPF & SPIELABLAUF                  8. KI
      -- ab hier nur im Browser --
-     9. RENDERING      10. UI              11. EINGABE     12. START
+     9. RENDERING      10. UI              11. EINGABE     12. MEHRSPIELER
+    13. START
    ===================================================================== */
 
 /* ============================ 1. KONFIGURATION ============================ */
@@ -330,11 +375,17 @@ function mulberry32(a) {
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const inMap = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+// Math.hypot/sin/cos/atan2 sind je nach Browser-Engine unterschiedlich genau. Die Simulation
+// nutzt nur exakt gerundete Operationen (+ - * / sqrt), damit sie im Mehrspieler-Lockstep
+// auf allen Rechnern Bit für Bit gleich abläuft.
+const hyp = (dx, dy) => Math.sqrt(dx * dx + dy * dy);
+const dist = (ax, ay, bx, by) => hyp(ax - bx, ay - by);
+// Zufall der Simulation: an den Karten-Seed gebunden (Math.random nur für reine Optik)
+function rnd() { return G.rng(); }
 function distToRect(x, y, rx, ry, rw, rh) {
   const dx = Math.max(rx - x, 0, x - (rx + rw));
   const dy = Math.max(ry - y, 0, y - (ry + rh));
-  return Math.hypot(dx, dy);
+  return hyp(dx, dy);
 }
 function costStr(c) { return Object.keys(c).map(k => c[k] + ' ' + RES_DE[k]).join(', '); }
 function fmtTime(t) { t = Math.floor(t); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); }
@@ -346,7 +397,7 @@ let G = null; // aktueller Spielzustand
 function makeResource(type, sub, x, y, amount) {
   const r = { id: G.nextId++, kind: 'res', rtype: type, sub, tx: x, ty: y, x: x + 0.5, y: y + 0.5, amount, max: amount,
     block: sub !== 'carcass', dead: false, var: (x * 7 + y * 13) % 3 };
-  G.resources.push(r);
+  G.resources.push(r); G.byId.set(r.id, r);
   G.res[y * N + x] = r;
   updateTile(y * N + x);
   return r;
@@ -635,9 +686,9 @@ function spawnUnit(type, owner, x, y) {
   const u = {
     id: G.nextId++, kind: 'unit', type, def: d, owner, x, y, hp: d.hp, maxHp: d.hp, dead: false,
     order: null, path: null, pi: 0, dest: null, carry: 0, carryType: null, carryFrac: 0,
-    cd: Math.random() * 0.5, scanT: Math.random() * 0.5, facing: owner === 1 ? Math.PI * 1.25 : Math.PI * 0.25,
-    anim: Math.random() * 10, moving: false, atkAnim: 0, stuckT: 0, lastX: x, lastY: y, target: null, guard: null,
-    aggr: false, pending: null, queued: false, pathT: 0, pathFails: 0, lastAttacker: null, wanderT: 3 + Math.random() * 6,
+    cd: rnd() * 0.5, scanT: rnd() * 0.5, facing: owner === 1 ? Math.PI * 1.25 : Math.PI * 0.25,
+    anim: rnd() * 10, moving: false, atkAnim: 0, stuckT: 0, lastX: x, lastY: y, target: null, guard: null,
+    aggr: false, pending: null, queued: false, pathT: 0, pathFails: 0, lastAttacker: null, wanderT: 3 + rnd() * 6,
   };
   G.units.push(u); G.byId.set(u.id, u);
   if (owner < 2) { G.players[owner].pop += d.pop; G.players[owner].stats.trained++; }
@@ -655,9 +706,11 @@ function requestPath(u, goal, breakWalls) {
 }
 const nowMs = (typeof performance !== 'undefined' && performance.now) ? () => performance.now() : () => Date.now();
 const PATH_TIME_MS = 4; // Zeitbudget für A* pro Simulationsschritt
+const PATH_BUDGET_NET = 12; // Mehrspieler: feste Anzahl statt Zeitbudget (muss auf allen Rechnern gleich sein)
 function processPathQueue() {
   let n = 0; const t0 = nowMs();
-  while (G.pathQueue.length && n < PATH_BUDGET && (n < 3 || nowMs() - t0 < PATH_TIME_MS)) {
+  const lim = G.net ? PATH_BUDGET_NET : PATH_BUDGET;
+  while (G.pathQueue.length && n < lim && (G.net || n < 3 || nowMs() - t0 < PATH_TIME_MS)) {
     const u = G.pathQueue.shift(); u.queued = false;
     if (u.dead || !u.pending) continue;
     const { goal, bw } = u.pending; u.pending = null; n++;
@@ -701,7 +754,7 @@ function stopMoving(u) { u.path = null; u.dest = null; u.pending = null; u.movin
 
 // bewegt die Einheit Richtung (tx,ty). Gibt true zurück, wenn angekommen.
 function moveTowards(u, tx, ty, dt, slack) {
-  const dx = tx - u.x, dy = ty - u.y, d = Math.hypot(dx, dy);
+  const dx = tx - u.x, dy = ty - u.y, d = hyp(dx, dy);
   if (d <= (slack || 0.06)) return true;
   const step = Math.min(d, u.def.speed * dt);
   const nx = u.x + dx / d * step, ny = u.y + dy / d * step;
@@ -821,7 +874,7 @@ function groupMove(units, x, y, attackMove) {
   const slots = formationSlots(fx, fy, units.length, owner);
   // Nahkampf vorne (näher am Ziel aus Sicht der Gruppe), Fernkampf/Belagerung hinten
   let gx = 0, gy = 0; for (const u of units) { gx += u.x; gy += u.y; } gx /= units.length; gy /= units.length;
-  const dirx = fx - gx, diry = fy - gy, dl = Math.hypot(dirx, diry) || 1;
+  const dirx = fx - gx, diry = fy - gy, dl = hyp(dirx, diry) || 1;
   slots.sort((a, b) => ((b.x - fx) * dirx + (b.y - fy) * diry) / dl - ((a.x - fx) * dirx + (a.y - fy) * diry) / dl);
   const rank = u => u.def.siege ? 2 : u.def.range > 2 ? 1 : 0;
   const sorted = units.slice().sort((a, b) => rank(a) - rank(b));
@@ -892,8 +945,8 @@ function engage(u, t, dt, breakWalls) {
   }
   // zu nah für Katapult -> zurückweichen
   if (u.def.minRange && rangeTo(u, t) < u.def.minRange) {
-    const a = Math.atan2(u.y - t.y, u.x - t.x);
-    moveTowards(u, u.x + Math.cos(a), u.y + Math.sin(a), dt);
+    const ax = u.x - t.x, ay = u.y - t.y, al = hyp(ax, ay) || 1;
+    moveTowards(u, u.x + ax / al, u.y + ay / al, dt);
     return;
   }
   const tx = t.kind === 'bld' ? t.x : t.x, ty = t.kind === 'bld' ? t.y : t.y;
@@ -1155,15 +1208,15 @@ function afterBuilt(u, b) {
 function updateDeer(u, dt) {
   if (u.lastAttacker && alive(u.lastAttacker) && dist(u.x, u.y, u.lastAttacker.x, u.lastAttacker.y) < 5) {
     // flüchten (langsam genug, damit Jäger aufholen)
-    const a = Math.atan2(u.y - u.lastAttacker.y, u.x - u.lastAttacker.x);
+    const ax = u.x - u.lastAttacker.x, ay = u.y - u.lastAttacker.y, al = hyp(ax, ay) || 1;
     u.path = null;
-    moveTowards(u, u.x + Math.cos(a), u.y + Math.sin(a), dt * 0.6);
+    moveTowards(u, u.x + ax / al, u.y + ay / al, dt * 0.6);
     return;
   }
   u.wanderT -= dt;
   if (u.wanderT <= 0 && !u.path) {
-    u.wanderT = 5 + Math.random() * 8;
-    const nx = u.x + (Math.random() - 0.5) * 3, ny = u.y + (Math.random() - 0.5) * 3;
+    u.wanderT = 5 + rnd() * 8;
+    const nx = u.x + (rnd() - 0.5) * 3, ny = u.y + (rnd() - 0.5) * 3;
     if (passableXY(Math.floor(nx), Math.floor(ny), GAIA)) { u.path = []; u.pi = 0; u.dest = { x: nx, y: ny }; }
   }
   if (u.path) { if (followPath(u, dt * 0.35) === 'done') u.moving = false; } else u.moving = false;
@@ -1200,7 +1253,7 @@ function updateUnit(u, dt) {
       u.lastAttacker = null;
     }
     if (u.scanT <= 0) {
-      u.scanT = 0.45 + Math.random() * 0.15;
+      u.scanT = 0.45 + rnd() * 0.15;
       const t = scanForTarget(u, u.def.siege ? Math.max(u.def.sight, u.def.range + 1) : u.def.sight, u.aggr || !!(o && o.t === 'amove'));
       if (t && (!u.target || (u.target.kind === 'bld' && t.kind === 'unit' && !u.def.bldOnly) || targetPriority(u, t) > targetPriority(u, u.target) + 0.9)) u.target = t;
     }
@@ -1238,7 +1291,7 @@ function separate(dt) {
     let px = 0, py = 0;
     queryUnits(u.x, u.y, r + 0.45, o => {
       if (o === u) return;
-      const dx = u.x - o.x, dy = u.y - o.y; const d = Math.hypot(dx, dy); const min = r + o.def.radius;
+      const dx = u.x - o.x, dy = u.y - o.y; const d = hyp(dx, dy); const min = r + o.def.radius;
       if (d >= min) return;
       if (d < 1e-4) { px += (u.id % 7 - 3) * 0.01 + 0.01; py += (u.id % 5 - 2) * 0.01; return; }
       let w = (min - d) / min;
@@ -1368,7 +1421,7 @@ function queueUnit(b, type) {
   if (b.queue.length >= 8) return 'Warteschlange voll';
   if (!canAfford(p, d.cost)) return 'Nicht genug Ressourcen';
   pay(p, d.cost);
-  b.queue.push({ type, t: 0 });
+  b.queue.push({ type, t: 0, id: G.nextId++ });
   return null;
 }
 function cancelQueue(b, idx) {
@@ -1428,7 +1481,7 @@ function spawnPointFor(b, type) {
     if (x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h) continue;
     if (!passableXY(x, y, owner)) continue;
     const d = dist(x + 0.5, y + 0.5, rx, ry);
-    if (d < bd) { bd = d; best = { x: x + 0.5 + (Math.random() - 0.5) * 0.3, y: y + 0.5 + (Math.random() - 0.5) * 0.3 }; }
+    if (d < bd) { bd = d; best = { x: x + 0.5 + (rnd() - 0.5) * 0.3, y: y + 0.5 + (rnd() - 0.5) * 0.3 }; }
   }
   if (!best) { const f = nearestFree(b.x, b.y, owner, 8); if (f) best = { x: f.x + 0.5, y: f.y + 0.5 }; }
   return best;
@@ -1446,7 +1499,7 @@ function sendToRally(u, b) {
       }
     }
   }
-  orderMove(u, r.x + (Math.random() - 0.5) * 0.8, r.y + (Math.random() - 0.5) * 0.8, false);
+  orderMove(u, r.x + (rnd() - 0.5) * 0.8, r.y + (rnd() - 0.5) * 0.8, false);
 }
 
 // Mauerlinie von (x0,y0) nach (x1,y1) – Kachel für Kachel (Bresenham)
@@ -1534,7 +1587,8 @@ function newPlayer(i) {
 function newGame(seed, diff, opts) {
   opts = opts || {};
   G = {
-    seed, diff, time: 0, nextId: 1, human: opts.headlessBothAI ? -1 : 0, headless: !!opts.headless,
+    seed, diff, time: 0, nextId: 1, human: opts.headlessBothAI ? -1 : (opts.human || 0), headless: !!opts.headless,
+    net: !!opts.net, rng: mulberry32((seed ^ 0x5bd1e995) >>> 0),
     terr: new Uint8Array(NN), forest: new Uint8Array(NN), block: new Uint8Array(NN), gate: new Int8Array(NN).fill(-1),
     res: new Array(NN).fill(null), bld: new Array(NN).fill(null),
     resources: [], units: [], buildings: [], projectiles: [], effects: [], byId: new Map(), pathQueue: [],
@@ -1552,10 +1606,12 @@ function newGame(seed, diff, opts) {
     }
     G.players[p].stats.trained = 0;
   }
-  const dd = DIFFS[diff];
-  G.players[1].gatherMult = dd.gather;
-  G.players[1].res.food += dd.startBonus; G.players[1].res.wood += dd.startBonus;
-  G.ais.push(createAI(1, diff));
+  if (!opts.net) { // Mehrspieler: beide Seiten menschlich, keine KI
+    const dd = DIFFS[diff];
+    G.players[1].gatherMult = dd.gather;
+    G.players[1].res.food += dd.startBonus; G.players[1].res.wood += dd.startBonus;
+    G.ais.push(createAI(1, diff));
+  }
   if (opts.headlessBothAI) { G.ais.push(createAI(0, opts.p0diff || 'medium')); G.players[0].gatherMult = DIFFS[opts.p0diff || 'medium'].gather; }
   rebuildGrid();
   return G;
@@ -1597,6 +1653,154 @@ function checkVictory() {
   }
 }
 function notify(text, warn) { if (G && !G.headless) G.msgs.push({ text, warn: !!warn, t: G.time }); }
+
+/* ---------- Spielerbefehle ----------
+   Jede Eingabe, die den Spielzustand ändert, wird als Befehl aus IDs und Zahlen beschrieben und mit
+   execCmd ausgeführt: im Einzelspieler sofort, im Mehrspieler auf allen Rechnern im selben Tick. */
+function cmdEnts(p, ids, kind) {
+  const out = [];
+  for (const id of ids || []) { const e = G.byId.get(id); if (alive(e) && e.owner === p && (!kind || e.kind === kind)) out.push(e); }
+  return out;
+}
+function cmdMsg(p, text) { if (p === G.human) notify(text, true); }
+function execCmd(p, c) {
+  if (G.over || !c) return;
+  if (c.c === 'act') execAct(p, c);
+  else if (c.c === 'build') execBuild(p, c);
+  else if (c.c === 'train') {
+    const d = UNITS[c.type]; if (!d) return;
+    const n = clamp(c.n | 0, 1, 5); let first = true;
+    for (const b of cmdEnts(p, c.ids, 'bld')) {
+      if (!(BUILDINGS[b.type].trains || []).includes(c.type)) continue;
+      for (let i = 0; i < n; i++) { const err = queueUnit(b, c.type); if (err) { if (first && i === 0) cmdMsg(p, err); break; } }
+      first = false;
+    }
+  } else if (c.c === 'unq') {
+    const b = cmdEnts(p, [c.id], 'bld')[0];
+    if (b) { const k = b.queue.findIndex(q => q.id === c.q); if (k >= 0) cancelQueue(b, k); }
+  } else if (c.c === 'stop') { for (const u of cmdEnts(p, c.ids, 'unit')) clearOrder(u); }
+  else if (c.c === 'del') { for (const e of cmdEnts(p, c.ids)) { if (e.kind === 'unit') killUnit(e); else deleteOwnBuilding(e); } }
+}
+// Rechtsklick: bewegen, angreifen, sammeln, bauen/reparieren, abgeben oder Sammelpunkt setzen
+function execAct(p, c) {
+  const own = cmdEnts(p, c.ids);
+  const units = own.filter(e => e.kind === 'unit');
+  const tg = c.t ? G.byId.get(c.t) : null;
+  const target = alive(tg) ? tg : null;
+  const x = +c.x, y = +c.y;
+  if (!isFinite(x) || !isFinite(y)) return;
+  if (!units.length) {
+    for (const b of own) {
+      if (b.kind !== 'bld' || !BUILDINGS[b.type].trains) continue;
+      if (target === b) { b.rally = null; continue; }
+      b.rally = { x: target ? target.x : x, y: target ? target.y : y, target: target && (target.kind === 'res' || (target.kind === 'bld' && target.owner === p)) ? target : null };
+    }
+    return;
+  }
+  if (c.am) { groupMove(units, x, y, true); return; }
+  if (target && target.owner !== undefined && target.owner < 2 && target.owner !== p) {
+    for (const u of units) orderAttack(u, target);
+    // Einheiten, die das Ziel nicht angreifen können (z. B. Ramme gegen Einheiten), bewegen sich dorthin
+    const cant = units.filter(u => !(u.order && u.order.t === 'attack'));
+    if (cant.length) groupMove(cant, target.x, target.y, false);
+    return;
+  }
+  const vills = units.filter(u => u.type === 'villager');
+  const others = units.filter(u => u.type !== 'villager');
+  let villsHandled = false;
+  if (target && vills.length) {
+    if (target.kind === 'res' || (target.kind === 'unit' && target.type === 'deer')) {
+      for (const v of vills) orderGather(v, target);
+      villsHandled = true;
+    } else if (target.kind === 'bld' && target.owner === p) {
+      const d = BUILDINGS[target.type];
+      if (!target.built || target.hp < target.maxHp) { for (const v of vills) orderBuild(v, target); villsHandled = true; }
+      else if (d.farm) {
+        // ein Dorfbewohner pro Feld, weitere auf freie Felder
+        for (const v of vills) { const f = (!target.farmer || !alive(G.byId.get(target.farmer)) || target.farmer === v.id) ? target : findFreeFarm(p, target.x, target.y); if (f) orderGather(v, f); else orderMove(v, target.x, target.y); }
+        villsHandled = true;
+      } else if (d.drop) {
+        for (const v of vills) {
+          if (v.carry > 0 && d.drop.indexOf(v.carryType) >= 0) {
+            const prev = v.order && v.order.t === 'gather' ? v.order : null;
+            clearOrder(v);
+            v.order = { t: 'gather', res: prev ? prev.res : null, phase: 'return', lx: prev ? prev.lx : v.x, ly: prev ? prev.ly : v.y, sub: prev ? prev.sub : (v.carryType === 'wood' ? 'tree' : v.carryType === 'food' ? 'berry' : v.carryType) };
+          } else orderMove(v, target.x, target.y);
+        }
+        villsHandled = true;
+      }
+    }
+  }
+  const movers = villsHandled ? others : units;
+  if (movers.length) groupMove(movers, x, y, false);
+}
+// Gebäude oder Mauerlinie platzieren und ausgewählte Dorfbewohner bauen lassen
+function execBuild(p, c) {
+  const d = BUILDINGS[c.type];
+  if (!d || VILLAGER_BUILDS.indexOf(c.type) < 0 || !Array.isArray(c.tiles)) return;
+  const vills = cmdEnts(p, c.ids, 'unit').filter(u => u.type === 'villager');
+  if (!vills.length) return;
+  const pl = G.players[p]; const placed = [];
+  for (const t of c.tiles.slice(0, 200)) {
+    const tx = t[0] | 0, ty = t[1] | 0;
+    if (!canPlace(c.type, tx, ty, p)) continue;
+    if (!canAfford(pl, d.cost)) { cmdMsg(p, 'Nicht genug Ressourcen.'); break; }
+    pay(pl, d.cost);
+    placed.push(placeBuilding(c.type, tx, ty, p, false));
+  }
+  if (!placed.length) { if (c.tiles.length === 1) cmdMsg(p, 'Hier kann nicht gebaut werden.'); return; }
+  // Bauarbeiter: erstes Gebäude, Rest folgt automatisch (autoNextBuild)
+  const v0 = vills[0];
+  placed.sort((a, b) => dist(a.x, a.y, v0.x, v0.y) - dist(b.x, b.y, v0.x, v0.y));
+  vills.forEach((v, k) => orderBuild(v, placed[k % placed.length]));
+}
+
+/* ---------- Lockstep (Mehrspieler) ----------
+   Alle Rechner simulieren dasselbe Spiel. Befehle werden für einen Turn einige Turns in der Zukunft
+   eingeplant und an alle verschickt; ein Turn startet erst, wenn die Befehle aller Spieler da sind. */
+const TURN_TICKS = 3;   // 3 Ticks = 100 ms pro Turn
+const HASH_EVERY = 10;  // Prüfsumme jede Sekunde, um auseinanderlaufende Simulationen zu erkennen
+function createLockstep(n, me, delay, send) {
+  const L = { n, me, delay, send, turn: 0, inbox: new Map(), out: [], hashes: new Map(), remoteHashes: new Map(), desync: -1, maxRecv: delay - 1 };
+  for (let t = 0; t < delay; t++) L.inbox.set(t, Array.from({ length: n }, () => []));
+  return L;
+}
+function lsSlot(L, t) { let s = L.inbox.get(t); if (!s) { s = new Array(L.n).fill(null); L.inbox.set(t, s); } return s; }
+function lsQueue(L, cmd) { L.out.push(cmd); }
+function lsReceive(L, from, msg) {
+  if (!msg || typeof msg.t !== 'number' || msg.t < L.turn || !Array.isArray(msg.c)) return;
+  lsSlot(L, msg.t)[from] = msg.c;
+  if (msg.t > L.maxRecv) L.maxRecv = msg.t;
+  if (msg.h) { L.remoteHashes.set(msg.h[0], msg.h[1]); lsCheck(L, msg.h[0]); }
+}
+function lsReady(L) { const s = L.inbox.get(L.turn); if (!s) return false; for (let i = 0; i < L.n; i++) if (!s[i]) return false; return true; }
+function lsCheck(L, t) {
+  if (!L.hashes.has(t) || !L.remoteHashes.has(t)) return;
+  if (L.hashes.get(t) !== L.remoteHashes.get(t) && L.desync < 0) L.desync = t;
+  L.hashes.delete(t); L.remoteHashes.delete(t);
+}
+// Zu Beginn jedes Turns (G.tick % TURN_TICKS === 0) aufrufen, nur wenn lsReady(L)
+function lsBeginTurn(L) {
+  const T = L.turn, s = L.inbox.get(T); L.inbox.delete(T);
+  for (let p = 0; p < L.n; p++) for (const c of s[p]) execCmd(p, c);
+  // eigene Befehle für später einplanen; JSON-Kopie, damit lokal exakt dasselbe ausgeführt wird wie beim Gegner
+  const msg = { t: T + L.delay, c: JSON.parse(JSON.stringify(L.out)) }; L.out = [];
+  if (T % HASH_EVERY === 0) { const h = stateHash(); L.hashes.set(T, h); msg.h = [T, h]; lsCheck(L, T); }
+  lsSlot(L, msg.t)[L.me] = msg.c;
+  L.send(msg);
+  L.turn++;
+}
+const HASH_F64 = new Float64Array(1), HASH_U32 = new Uint32Array(HASH_F64.buffer);
+function stateHash() {
+  let h = 2166136261;
+  const mixN = v => { HASH_F64[0] = v; h = Math.imul(h ^ HASH_U32[0], 16777619); h = Math.imul(h ^ HASH_U32[1], 16777619); };
+  mixN(G.tick); mixN(G.nextId);
+  for (const u of G.units) if (!u.dead) { mixN(u.id); mixN(u.x); mixN(u.y); mixN(u.hp); }
+  for (const b of G.buildings) if (!b.dead) { mixN(b.id); mixN(b.hp); mixN(b.progress); mixN(b.queue.length); }
+  for (const r of G.resources) if (!r.dead) mixN(r.amount);
+  for (const p of G.players) for (const k of RES_TYPES) mixN(p.res[k]);
+  return h >>> 0;
+}
 
 /* ============================ 8. KI ============================ */
 const WALL_LINE = 20; // Abstand der KI-Mauerlinie von der eigenen Ecke (in Kacheln)
@@ -1748,7 +1952,7 @@ function aiEconomy(ai) {
   if (p.popCap < MAX_POP && p.pop + margin >= p.popCap && houses < (t < 300 ? 1 : 2) && tc) {
     const hn = aiBuildingCount(ai, 'house'); const dir = ai.owner ? -1 : 1;
     const ang = hn * 0.7;
-    const ax = tc.x - dir * 1 + Math.cos(ang) * 5, ay = tc.y - dir * 1 + Math.sin(ang) * 5;
+    const ax = tc.x - dir * 1 + Math.cos(ang) * 5, ay = tc.y - dir * 1 + Math.sin(ang) * 5; // KI läuft nur im Einzelspieler
     const spot = aiFindSpot(ai, 'house', ax, ay, { maxR: 10, inside: !!ai.d.walls }) || aiFindSpot(ai, 'house', tc.x, tc.y, { maxR: 18 });
     if (spot) aiPlace(ai, 'house', spot, 1);
   }
@@ -1957,7 +2161,7 @@ function aiDefense(ai) {
   if (strength > home.length + 3) {
     for (const id of ai.attackers) {
       const u = G.byId.get(id); if (!alive(u)) continue;
-      if (tc && dist(u.x, u.y, tc.x, tc.y) > 25 && Math.random() < 0.5) { ai.attackers.delete(id); home.push(u); }
+      if (tc && dist(u.x, u.y, tc.x, tc.y) > 25 && rnd() < 0.5) { ai.attackers.delete(id); home.push(u); }
     }
   }
   for (const u of home) {
@@ -1965,13 +2169,13 @@ function aiDefense(ai) {
     if (u.target && rangeTo(u, u.target) < u.def.sight) continue;
     if (!ai.defenders.has(u.id) || !u.order) {
       ai.defenders.add(u.id);
-      orderMove(u, ai.threat.x + (Math.random() - 0.5) * 2, ai.threat.y + (Math.random() - 0.5) * 2, true);
+      orderMove(u, ai.threat.x + (rnd() - 0.5) * 2, ai.threat.y + (rnd() - 0.5) * 2, true);
     }
   }
   // Dorfbewohner in unmittelbarer Gefahr: zum Dorfzentrum fliehen, wenn keine Verteidiger
   if (home.length < strength && tc) {
     for (const u of aiUnits(ai, v => v.type === 'villager' && v.lastAttacker && alive(v.lastAttacker) && v.lastAttacker.def.military)) {
-      if (dist(u.x, u.y, tc.x, tc.y) > 4) { orderMove(u, tc.x + (Math.random() - 0.5) * 5, tc.y + (Math.random() - 0.5) * 5); u.lastAttacker = null; }
+      if (dist(u.x, u.y, tc.x, tc.y) > 4) { orderMove(u, tc.x + (rnd() - 0.5) * 5, tc.y + (rnd() - 0.5) * 5); u.lastAttacker = null; }
     }
   }
 }
@@ -2001,7 +2205,7 @@ function aiAttack(ai) {
       const tgt = aiPickTarget(ai, u);
       if (!tgt) continue;
       if (u.def.bldOnly || u.def.siege) { if (tgt.kind === 'bld') orderAttack(u, tgt); else orderMove(u, tgt.x, tgt.y, true); }
-      else orderMove(u, tgt.x + (Math.random() - 0.5) * 3, tgt.y + (Math.random() - 0.5) * 3, true);
+      else orderMove(u, tgt.x + (rnd() - 0.5) * 3, tgt.y + (rnd() - 0.5) * 3, true);
     }
   }
   // Welle beendet?
@@ -2565,18 +2769,20 @@ function unitHeight(type) { return type === 'horseman' ? 30 : type === 'ram' ? 2
 
 /* ---------- Icons für die Befehlsleiste ---------- */
 const ICONS = {};
-function makeIcons() {
+let iconsOwner = -1;
+function makeIcons(owner) { // Symbole in der Farbe des eigenen Spielers
+  owner = owner || 0; if (iconsOwner === owner) return; iconsOwner = owner;
   for (const type in BUILDINGS) {
     const cv = document.createElement('canvas'); cv.width = 96; cv.height = 96; const c = cv.getContext('2d');
     const d = BUILDINGS[type];
     if (d.wall) {
-      const fake = { type, owner: 0, tx: 0, ty: 0, w: 1, h: 1 };
+      const fake = { type, owner, tx: 0, ty: 0, w: 1, h: 1 };
       c.translate(48, 34); c.scale(2.2, 2.2);
       const saveG = G; G = { bld: [], players: G ? G.players : [] };
       drawWallPiece(c, fake);
       G = saveG;
     } else {
-      const spr = buildingSprite(type, 0);
+      const spr = buildingSprite(type, owner);
       const s = Math.min(92 / spr.w, 92 / spr.h);
       // Inhalt etwa mittig: Sprite enthält oben Leerraum
       const used = spr.h - 110 + (d.w + d.h) * 0 + 100;
@@ -2589,7 +2795,7 @@ function makeIcons() {
   for (const type in UNITS) {
     const cv = document.createElement('canvas'); cv.width = 96; cv.height = 96; const c = cv.getContext('2d');
     const big = type === 'ram' || type === 'catapult' || type === 'horseman';
-    drawUnitShape(c, null, 48, big ? 70 : 80, big ? 2.4 : 2.9, 0, type, 0, 0, false, 0, 0, null, 'build');
+    drawUnitShape(c, null, 48, big ? 70 : 80, big ? 2.4 : 2.9, owner, type, 0, 0, false, 0, 0, null, 'build');
     ICONS[type] = cv.toDataURL();
   }
 }
@@ -2958,7 +3164,7 @@ function refreshCommands() {
   if (units.length && !UI.buildMenu) {
     const combat = units.some(u => u.def.military);
     if (combat) box.appendChild(cmdButton({ text: 'Angriffs-\nbewegung', hotkey: 'A', active: UI.cmdMode === 'amove', tip: () => '<div class="tt">Angriffsbewegung (A)</div>Zum Ziel bewegen und unterwegs alle Feinde angreifen. Danach auf die Karte klicken.', onClick: () => { UI.cmdMode = 'amove'; refreshCommands(); } }));
-    box.appendChild(cmdButton({ text: 'Halt', hotkey: 'X', tip: () => '<div class="tt">Halt (X)</div>Alle Befehle abbrechen.', onClick: () => { for (const u of selOwnUnits()) clearOrder(u); } }));
+    box.appendChild(cmdButton({ text: 'Halt', hotkey: 'X', tip: () => '<div class="tt">Halt (X)</div>Alle Befehle abbrechen.', onClick: () => issue({ c: 'stop', ids: selOwnUnits().map(u => u.id) }) }));
     box.appendChild(cmdButton({ text: 'Löschen', hotkey: 'Entf', tip: () => '<div class="tt">Einheit entlassen (Entf)</div>Ausgewählte Einheiten werden entfernt.', onClick: () => deleteSelection() }));
   }
   if (blds.length && !units.length) {
@@ -2969,7 +3175,7 @@ function refreshCommands() {
         box.appendChild(cmdButton({
           icon: ICONS[ut], label: ud.name, hotkey: TRAIN_KEYS[k], disabled: !canAfford(p, ud.cost),
           tip: () => `<div class="tt">${ud.name}</div>${costHtml(ud.cost, p)}${ud.desc}<br><span style="opacity:.75">LP ${ud.hp} · Angriff ${ud.atkBld || ud.atk}${ud.range > 1 ? ' · Reichweite ' + ud.range : ''} · Bev. ${ud.pop} · ${ud.time}s</span><br><i>Shift+Klick: 5×</i>`,
-          onClick: e => { const n = e.shiftKey ? 5 : 1; for (const bb of blds.filter(x => x.type === b.type)) { for (let i = 0; i < n; i++) { const err = queueUnit(bb, ut); if (err) { if (i === 0) notifyLocal(err); break; } } } refreshPanel(true); },
+          onClick: e => { issue({ c: 'train', ids: blds.filter(x => x.type === b.type).map(x => x.id), type: ut, n: e.shiftKey ? 5 : 1 }); refreshPanel(true); },
         }));
       });
     }
@@ -2980,7 +3186,7 @@ function notifyLocal(t) { G.msgs.push({ text: t, warn: true, t: G.time }); }
 function deleteSelection() {
   const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
   if (!own.length) return;
-  for (const e of own) { if (e.kind === 'unit') killUnit(e); else deleteOwnBuilding(e); }
+  issue({ c: 'del', ids: own.map(e => e.id) });
   setSelection([]);
 }
 
@@ -3046,7 +3252,7 @@ function refreshPanel(force) {
       }
       if (own && d.trains && e.built) html += `<div class="sub" style="opacity:.6;margin-top:4px">Rechtsklick auf die Karte setzt den Sammelpunkt.</div>`;
       info.innerHTML = html;
-      info.querySelectorAll('.qitem').forEach(el => el.addEventListener('click', () => { cancelQueue(e, +el.dataset.q); refreshPanel(true); }));
+      info.querySelectorAll('.qitem').forEach(el => el.addEventListener('click', () => { const q = e.queue[+el.dataset.q]; if (q) issue({ c: 'unq', id: e.id, q: q.id }); refreshPanel(true); }));
       return;
     }
   }
@@ -3094,20 +3300,10 @@ function commitPlacing(shift) {
   const d = BUILDINGS[pl.type]; const p = G.players[G.human];
   const tiles = d.line && pl.lineStart ? wallLine(pl.lineStart.x, pl.lineStart.y, pl.tx, pl.ty) : [{ x: pl.tx, y: pl.ty }];
   const vills = selOwnUnits().filter(u => u.type === 'villager');
-  const placed = [];
-  for (const t of tiles) {
-    if (!canPlace(pl.type, t.x, t.y, G.human)) continue;
-    if (!canAfford(p, d.cost)) { notifyLocal('Nicht genug Ressourcen.'); break; }
-    pay(p, d.cost);
-    placed.push(placeBuilding(pl.type, t.x, t.y, G.human, false));
-  }
-  if (!placed.length) { if (tiles.length === 1) notifyLocal('Hier kann nicht gebaut werden.'); }
-  else {
-    // Bauarbeiter: erstes Gebäude, Rest folgt automatisch (autoNextBuild)
-    const first = placed.sort((a, b) => dist(a.x, a.y, vills[0] ? vills[0].x : 0, vills[0] ? vills[0].y : 0) - dist(b.x, b.y, vills[0] ? vills[0].x : 0, vills[0] ? vills[0].y : 0));
-    vills.forEach((v, k) => orderBuild(v, first[k % first.length]));
-    addEffect('order', placed[0].x, placed[0].y, 'move');
-  }
+  if (!vills.length) { UI.placing = null; refreshPanel(true); return; }
+  issue({ c: 'build', ids: vills.map(u => u.id), type: pl.type, tiles: tiles.map(t => [t.x, t.y]) });
+  const ok = tiles.find(t => canPlace(pl.type, t.x, t.y, G.human));
+  if (ok) addEffect('order', ok.x + d.w / 2, ok.y + d.h / 2, 'move');
   if (shift && canAfford(p, d.cost)) { pl.lineStart = null; }
   else UI.placing = null;
   refreshPanel(true);
@@ -3116,12 +3312,17 @@ function commitPlacing(shift) {
 /* ---------- Ende ---------- */
 function showEnd() {
   const o = G.over; const win = o.winner === G.human;
-  $('endTitle').textContent = win ? 'Sieg!' : 'Niederlage';
-  $('endTitle').style.color = win ? '#2d6a1f' : '#7a1d16';
-  $('endSub').textContent = (win ? 'Die gegnerische Siedlung ist gefallen.' : 'Deine Siedlung wurde zerstört.') + ' Spielzeit ' + fmtTime(o.time) + ' · ' + DIFFS[G.diff].name;
-  const s0 = G.players[0].stats, s1 = G.players[1].stats;
+  $('endTitle').textContent = o.lost ? 'Verbindung getrennt' : win ? 'Sieg!' : 'Niederlage';
+  $('endTitle').style.color = o.lost ? '#5a2a14' : win ? '#2d6a1f' : '#7a1d16';
+  const why = o.lost ? 'Die Verbindung zum Mitspieler ist abgebrochen.' : o.resign ? 'Dein Mitspieler hat aufgegeben.'
+    : win ? 'Die gegnerische Siedlung ist gefallen.' : 'Deine Siedlung wurde zerstört.';
+  $('endSub').textContent = why + ' Spielzeit ' + fmtTime(o.time) + ' · ' + (G.net ? 'Mehrspieler' : DIFFS[G.diff].name);
+  // Spalten: zuerst der eigene Spieler
+  const me = Math.max(0, G.human), other = 1 - me;
+  const sm = G.players[me].stats, so = G.players[other].stats;
   const rows = [['Gesammelte Ressourcen', 'gathered'], ['Ausgebildete Einheiten', 'trained'], ['Errichtete Gebäude', 'built'], ['Getötete Feinde', 'kills'], ['Verlorene Einheiten', 'lost'], ['Zerstörte Gebäude', 'razed']];
-  $('endStats').innerHTML = '<tr><th></th><th style="color:#2f6fd6">Du</th><th style="color:#d23a2e">KI</th></tr>' + rows.map(r => `<tr><td>${r[0]}</td><td>${Math.floor(s0[r[1]])}</td><td>${Math.floor(s1[r[1]])}</td></tr>`).join('');
+  $('endStats').innerHTML = `<tr><th></th><th style="color:${PLAYER_COLORS[me].main}">Du</th><th style="color:${PLAYER_COLORS[other].main}">${G.net ? 'Gegner' : 'KI'}</th></tr>` + rows.map(r => `<tr><td>${r[0]}</td><td>${Math.floor(sm[r[1]])}</td><td>${Math.floor(so[r[1]])}</td></tr>`).join('');
+  $('btnRestartSame').classList.toggle('hidden', !!G.net);
   $('endScreen').classList.remove('hidden');
 }
 
@@ -3201,61 +3402,26 @@ function selectSameOnScreen(e) {
   setSelection(list);
 }
 
-// Rechtsklick-Befehl
+// Rechtsklick-Befehl: Ziel und Ort werden lokal bestimmt, die Ausführung übernimmt execAct
 function commandAt(sx, sy, attackMove) {
   const w = s2w(sx, sy);
   const target = pickAt(sx, sy);
   const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
+  if (!own.length) return;
+  issue({ c: 'act', ids: own.map(e => e.id), x: w.x, y: w.y, t: target ? target.id : 0, am: !!attackMove });
+  // Markierung sofort anzeigen (im Mehrspieler kommt die Ausführung leicht verzögert)
   const units = own.filter(e => e.kind === 'unit');
-  // Sammelpunkt für Produktionsgebäude
-  if (!units.length) {
-    const blds = own.filter(e => e.kind === 'bld' && (BUILDINGS[e.type].trains));
-    for (const b of blds) {
-      if (target === b) { b.rally = null; continue; }
-      b.rally = { x: target ? target.x : w.x, y: target ? target.y : w.y, target: target && (target.kind === 'res' || (target.kind === 'bld' && target.owner === G.human)) ? target : null };
-    }
-    if (blds.length) addEffect('order', w.x, w.y, 'move');
-    return;
-  }
-  if (attackMove) {
-    groupMove(units, w.x, w.y, true); addEffect('order', w.x, w.y, 'attack'); return;
-  }
-  if (target && target.owner !== undefined && target.owner < 2 && target.owner !== G.human) {
-    for (const u of units) orderAttack(u, target);
-    // Einheiten, die das Ziel nicht angreifen können (z. B. Ramme gegen Einheiten), bewegen sich dorthin
-    const cant = units.filter(u => !(u.order && u.order.t === 'attack'));
-    if (cant.length) groupMove(cant, target.x, target.y, false);
-    addEffect('order', target.x, target.y, 'attack'); return;
-  }
-  const vills = units.filter(u => u.type === 'villager');
-  const others = units.filter(u => u.type !== 'villager');
-  let villsHandled = false;
-  if (target && vills.length) {
-    if (target.kind === 'res' || (target.kind === 'unit' && target.type === 'deer')) {
-      for (const v of vills) orderGather(v, target);
-      villsHandled = true;
-    } else if (target.kind === 'bld' && target.owner === G.human) {
-      const d = BUILDINGS[target.type];
-      if (!target.built || target.hp < target.maxHp) { for (const v of vills) orderBuild(v, target); villsHandled = true; }
-      else if (d.farm) {
-        // ein Dorfbewohner pro Feld, weitere auf freie Felder
-        for (const v of vills) { const f = (!target.farmer || !alive(G.byId.get(target.farmer)) || target.farmer === v.id) ? target : findFreeFarm(G.human, target.x, target.y); if (f) orderGather(v, f); else orderMove(v, target.x, target.y); }
-        villsHandled = true;
-      } else if (d.drop) {
-        for (const v of vills) {
-          if (v.carry > 0 && d.drop.indexOf(v.carryType) >= 0) {
-            const prev = v.order && v.order.t === 'gather' ? v.order : null;
-            clearOrder(v);
-            v.order = { t: 'gather', res: prev ? prev.res : null, phase: 'return', lx: prev ? prev.lx : v.x, ly: prev ? prev.ly : v.y, sub: prev ? prev.sub : (v.carryType === 'wood' ? 'tree' : v.carryType === 'food' ? 'berry' : v.carryType) };
-          } else orderMove(v, target.x, target.y);
-        }
-        villsHandled = true;
-      }
-    }
-  }
-  const movers = villsHandled ? others : units;
-  if (movers.length) groupMove(movers, w.x, w.y, false);
-  addEffect('order', target && villsHandled ? target.x : w.x, target && villsHandled ? target.y : w.y, 'move');
+  const enemy = target && target.owner !== undefined && target.owner < 2 && target.owner !== G.human;
+  const onTarget = target && units.some(u => u.type === 'villager') && (target.kind === 'res' || target.type === 'deer' || (target.kind === 'bld' && target.owner === G.human));
+  if (!units.length) { if (own.some(e => e.kind === 'bld' && BUILDINGS[e.type].trains)) addEffect('order', w.x, w.y, 'move'); }
+  else if (attackMove) addEffect('order', w.x, w.y, 'attack');
+  else if (enemy) addEffect('order', target.x, target.y, 'attack');
+  else addEffect('order', onTarget ? target.x : w.x, onTarget ? target.y : w.y, 'move');
+}
+// Spielzustand ändern: im Einzelspieler sofort, im Mehrspieler über den Lockstep
+function issue(cmd) {
+  if (!G || G.over) return;
+  if (NET.ls) lsQueue(NET.ls, cmd); else execCmd(G.human, cmd);
 }
 
 function setupInput() {
@@ -3352,7 +3518,7 @@ function setupInput() {
 
   window.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
-    if (e.target && e.target.tagName === 'INPUT') { if (k === 'enter') startGameFromMenu(); return; }
+    if (e.target && e.target.tagName === 'INPUT') { if (k === 'enter') { if (e.target.id === 'joinCode') netJoin(); else if (e.target.id === 'mpSeed') netStartAsHost(); else startGameFromMenu(); } return; }
     if (!running) return;
     if (k === ' ' || k === 'p') { e.preventDefault(); togglePause(); return; }
     if (paused) return;
@@ -3405,13 +3571,18 @@ function setupInput() {
   $('btnPause').addEventListener('click', () => togglePause());
   $('btnMenu').addEventListener('click', () => { if (!paused) togglePause(); });
   $('btnResume').addEventListener('click', () => togglePause());
-  $('btnQuit').addEventListener('click', () => { running = false; paused = false; $('pauseScreen').classList.add('hidden'); showMenu(); });
+  $('btnQuit').addEventListener('click', () => { running = false; paused = false; $('pauseScreen').classList.add('hidden'); netClose(true); showMenu(); });
   document.querySelectorAll('.diff').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
   }));
   $('btnStart').addEventListener('click', startGameFromMenu);
   $('btnRestartSame').addEventListener('click', () => { $('endScreen').classList.add('hidden'); startGame(G.seed, G.diff); });
-  $('btnNew').addEventListener('click', () => { $('endScreen').classList.add('hidden'); showMenu(); });
+  $('btnNew').addEventListener('click', () => { $('endScreen').classList.add('hidden'); netClose(true); showMenu(); });
+  $('btnMP').addEventListener('click', showMPScreen);
+  $('btnMPBack').addEventListener('click', () => { netClose(true); $('mpScreen').classList.add('hidden'); showMenu(); });
+  $('btnHost').addEventListener('click', netHost);
+  $('btnJoin').addEventListener('click', () => netJoin());
+  $('btnMPStart').addEventListener('click', netStartAsHost);
 }
 function zoomAt(sx, sy, nz) {
   nz = clamp(nz, 0.45, 2.2);
@@ -3446,12 +3617,174 @@ function updateCamera(dt) {
 }
 function togglePause() {
   if (!running || G.over) return;
-  paused = !paused;
+  setPaused(!paused);
+  if (NET.ls) netSend({ k: 'pause', on: paused });
+}
+function setPaused(on, byOther) {
+  paused = on;
   $('pauseScreen').classList.toggle('hidden', !paused);
+  $('pauseBy').textContent = byOther ? 'Dein Mitspieler hat pausiert.' : 'Leertaste oder P zum Fortsetzen';
   INPUT.keys.clear();
 }
 
-/* ============================ 12. START & HAUPTSCHLEIFE ============================ */
+/* ============================ 12. MEHRSPIELER (INTERNET) ============================ */
+// Verbindung Browser zu Browser per WebRTC (PeerJS). Der öffentliche PeerJS-Dienst vermittelt nur den
+// Verbindungsaufbau; STUN/TURN sorgen dafür, dass es auch hinter Routern (NAT) und Firewalls klappt.
+// Eigener Vermittlungsserver (z. B. `npx -p peer peerjs --port 9000`): index.html#peer=host:9000 öffnen.
+const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js'];
+const NET_PROTO = 1;            // Protokollversion; beide Seiten müssen dieselbe Spielversion nutzen
+const NET_PREFIX = 'burgfeld-';
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const NET = { peer: null, conn: null, role: null, me: 0, ls: null, code: '', ping: 0, pingT: null, stallT: 0, desyncShown: false, ready: false };
+
+function mpStatus(text, err) { const el = $('mpStatus'); el.innerHTML = text; el.classList.toggle('err', !!err); }
+function showMPScreen() {
+  $('startScreen').classList.add('hidden'); $('mpScreen').classList.remove('hidden'); $('mpLobby').classList.add('hidden');
+  mpStatus(''); $('mpPing').textContent = '';
+  const m = /(?:^|[#&])join=([A-Za-z0-9]{6})/.exec(location.hash);
+  if (m) $('joinCode').value = m[1].toUpperCase();
+}
+function loadPeerJS() {
+  if (window.Peer) return Promise.resolve();
+  return PEERJS_URLS.reduce((p, url) => p.catch(() => new Promise((ok, fail) => {
+    const s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = () => { s.remove(); fail(); };
+    document.head.appendChild(s);
+  })), Promise.reject()).catch(() => { throw new Error('PeerJS konnte nicht geladen werden – besteht eine Internetverbindung?'); });
+}
+function peerOptions() {
+  const o = { debug: 1 };
+  const m = /(?:^|[#&])peer=([^&]+)/.exec(location.hash);
+  if (m) { // eigener PeerJS-Server: host[:port][/pfad]
+    const u = new URL((/^https?:/.test(m[1]) ? '' : 'http://') + decodeURIComponent(m[1]));
+    o.host = u.hostname; o.port = +u.port || (u.protocol === 'https:' ? 443 : 80); o.path = u.pathname || '/'; o.secure = u.protocol === 'https:';
+  }
+  return o;
+}
+function genCode() {
+  const a = new Uint32Array(6); crypto.getRandomValues(a);
+  return Array.from(a, v => CODE_CHARS[v % CODE_CHARS.length]).join('');
+}
+function netErrorText(e) {
+  const t = e && e.type;
+  if (t === 'peer-unavailable') return 'Kein Spiel mit diesem Code gefunden. Code prüfen – ist das Spiel beim Ersteller noch offen?';
+  if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') return 'Vermittlungsserver nicht erreichbar. Internetverbindung prüfen.';
+  if (t === 'browser-incompatible') return 'Dieser Browser unterstützt kein WebRTC.';
+  return 'Verbindungsfehler: ' + ((e && (e.message || e.type)) || e);
+}
+function netSend(msg) { if (NET.conn && NET.conn.open) NET.conn.send(msg); }
+function netClose(sayBye) {
+  if (sayBye) netSend({ k: 'bye' });
+  clearInterval(NET.pingT); NET.pingT = null;
+  const peer = NET.peer, conn = NET.conn;
+  NET.peer = null; NET.conn = null; NET.ls = null; NET.role = null; NET.ready = false;
+  // kurz warten, damit 'bye' noch rausgeht
+  setTimeout(() => { try { conn && conn.close(); } catch (e) {} try { peer && peer.destroy(); } catch (e) {} }, sayBye ? 300 : 0);
+}
+function setMPBusy(busy) { $('btnHost').disabled = busy; $('btnJoin').disabled = busy; }
+
+async function netHost() {
+  netClose(false); setMPBusy(true);
+  mpStatus('Verbinde mit dem Vermittlungsserver …');
+  try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
+  const tryOpen = attempt => {
+    const code = genCode();
+    const peer = new Peer(NET_PREFIX + code.toLowerCase(), peerOptions());
+    NET.peer = peer; NET.role = 'host'; NET.me = 0;
+    peer.on('open', () => {
+      NET.code = code;
+      const link = /^https?:/.test(location.protocol) ? `<br><small>oder Link schicken: <span style="user-select:all">${location.href.split('#')[0]}#join=${code}</span></small>` : '';
+      mpStatus(`Dein Spielcode:<br><span id="mpCode">${code}</span><br>Gib ihn deinem Mitspieler. Warte auf Verbindung …${link}`);
+    });
+    peer.on('connection', conn => {
+      if (NET.conn) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 500); }); return; }
+      netAttach(conn);
+    });
+    peer.on('error', e => {
+      if (peer !== NET.peer) return;
+      if (e.type === 'unavailable-id' && attempt < 4) { peer.destroy(); tryOpen(attempt + 1); return; }
+      if (running && NET.conn) return; // Signalserver weg, Spiel läuft direkt weiter
+      mpStatus(netErrorText(e), true); setMPBusy(false);
+    });
+  };
+  tryOpen(0);
+}
+async function netJoin() {
+  const code = $('joinCode').value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(code)) { mpStatus('Bitte den 6-stelligen Code eingeben.', true); return; }
+  netClose(false); setMPBusy(true);
+  mpStatus('Verbinde …');
+  try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
+  const peer = new Peer(peerOptions());
+  NET.peer = peer; NET.role = 'guest'; NET.me = 1; NET.code = code;
+  peer.on('open', () => {
+    mpStatus('Suche Spiel ' + code + ' …');
+    const conn = peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
+    netAttach(conn);
+    setTimeout(() => { if (NET.conn === conn && !conn.open) { mpStatus('Keine Verbindung möglich (Zeitüberschreitung). Firewall oder Netzwerk blockiert WebRTC.', true); setMPBusy(false); } }, 20000);
+  });
+  peer.on('error', e => { if (peer !== NET.peer || (running && NET.conn && NET.conn.open)) return; mpStatus(netErrorText(e), true); setMPBusy(false); });
+}
+function netAttach(conn) {
+  NET.conn = conn;
+  conn.on('open', () => {
+    netSend({ k: 'hello', v: NET_PROTO });
+    clearInterval(NET.pingT);
+    NET.pingT = setInterval(() => netSend({ k: 'ping', ts: performance.now() }), 2000);
+    netSend({ k: 'ping', ts: performance.now() });
+  });
+  conn.on('data', netOnData);
+  conn.on('close', () => { if (NET.conn === conn) netLost(); });
+  conn.on('error', () => { if (NET.conn === conn) netLost(); });
+}
+function netLost() {
+  const wasRunning = running && G && G.net && !G.over;
+  netClose(false);
+  if (wasRunning) { G.over = { winner: -2, lost: true, time: G.time }; showEnd(); }
+  else if (!$('mpScreen').classList.contains('hidden')) { mpStatus('Verbindung zum Mitspieler getrennt.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
+}
+function netOnData(m) {
+  if (!m || typeof m !== 'object') return;
+  switch (m.k) {
+    case 't': if (NET.ls) lsReceive(NET.ls, 1 - NET.me, m); break;
+    case 'hello':
+      if (m.v !== NET_PROTO) { mpStatus('Dein Mitspieler nutzt eine andere Spielversion. Bitte beide dieselbe index.html verwenden.', true); netClose(false); setMPBusy(false); return; }
+      NET.ready = true;
+      if (NET.role === 'host') { mpStatus('Mitspieler verbunden!'); $('mpLobby').classList.remove('hidden'); }
+      else mpStatus('Verbunden! Warte, bis der Ersteller das Spiel startet …');
+      break;
+    case 'ping': netSend({ k: 'pong', ts: m.ts }); break;
+    case 'pong':
+      NET.ping = Math.round(performance.now() - m.ts);
+      if (!running) $('mpPing').textContent = 'Ping: ' + NET.ping + ' ms';
+      if (running && G && G.net) $('diffLabel').textContent = 'Mehrspieler · Ping ' + NET.ping + ' ms · Seed ' + G.seed;
+      break;
+    case 'start': if (NET.role === 'guest') netStartGame(m.seed, m.delay); break;
+    case 'pause': if (running && G && G.net) setPaused(!!m.on, true); break;
+    case 'bye':
+      if (running && G && G.net && !G.over) { G.over = { winner: G.human, resign: true, time: G.time }; netClose(false); showEnd(); }
+      else { netClose(false); mpStatus('Dein Mitspieler hat das Spiel verlassen.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
+      break;
+    case 'full': mpStatus('Dieses Spiel ist bereits voll.', true); netClose(false); setMPBusy(false); break;
+  }
+}
+function netStartAsHost() {
+  if (NET.role !== 'host' || !NET.ready) return;
+  const txt = $('mpSeed').value.trim();
+  const seed = txt ? (/^\d+$/.test(txt) ? +txt : hashStr(txt)) : Math.floor(Math.random() * 1e9);
+  // Eingabeverzögerung an die gemessene Latenz anpassen (mind. 2 Turns = 200 ms)
+  const turnMs = TURN_TICKS * SIM_DT * 1000;
+  const delay = clamp(Math.ceil((NET.ping / 2 + 60) / turnMs) + 1, 2, 8);
+  netSend({ k: 'start', seed, delay });
+  netStartGame(seed, delay);
+}
+function netStartGame(seed, delay) {
+  $('mpScreen').classList.add('hidden');
+  NET.desyncShown = false; NET.stallT = 0;
+  NET.ls = createLockstep(2, NET.me, delay, msg => netSend({ k: 't', t: msg.t, c: msg.c, h: msg.h }));
+  startGame(seed, null, { net: true, human: NET.me });
+}
+
+/* ============================ 13. START & HAUPTSCHLEIFE ============================ */
 let lastFrame = 0, acc = 0, fpsT = 0, fpsN = 0;
 function showMenu() {
   running = false;
@@ -3464,8 +3797,11 @@ function startGameFromMenu() {
   const seed = txt ? (/^\d+$/.test(txt) ? +txt : hashStr(txt)) : Math.floor(Math.random() * 1e9);
   startGame(seed, diff);
 }
-function startGame(seed, diff) {
-  newGame(seed, diff, {});
+function startGame(seed, diff, opts) {
+  opts = opts || {};
+  if (!opts.net) NET.ls = null;
+  newGame(seed, diff, opts);
+  makeIcons(Math.max(0, G.human));
   UI.alerts = []; let lastAlert = -99;
   G.onHit = t => {
     if (G.time - lastAlert < 12) return;
@@ -3482,10 +3818,12 @@ function startGame(seed, diff) {
   cam.zoom = 1; centerOn(tc.x + 2, tc.y + 2);
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('pauseScreen').classList.add('hidden');
   $('topbar').classList.remove('hidden'); $('bottom').classList.remove('hidden');
-  $('diffLabel').textContent = 'Gegner: ' + DIFFS[diff].name + ' · Seed ' + seed;
-  paused = false; running = true; acc = 0;
+  $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[diff].name) + ' · Seed ' + seed;
+  paused = false; running = true; acc = 0; $('pauseScreen').classList.add('hidden');
   setSelection([tc]);
-  notify('Willkommen in Burgfeld! Sammle Ressourcen, baue deine Siedlung aus und zerstöre den roten Gegner.');
+  const foe = PLAYER_COLORS[1 - G.human].name.toLowerCase();
+  notify(G.net ? `Mehrspieler: Du spielst ${PLAYER_COLORS[G.human].name}. Zerstöre die ${foe}e Siedlung!`
+    : 'Willkommen in Burgfeld! Sammle Ressourcen, baue deine Siedlung aus und zerstöre den roten Gegner.');
 }
 function frame(t) {
   requestAnimationFrame(frame);
@@ -3495,15 +3833,27 @@ function frame(t) {
   if (!running || !G) return;
   if (!paused && !G.over) {
     acc += dt; let n = 0;
-    while (acc >= SIM_DT && n < 5) {
+    const L = NET.ls;
+    // Mehrspieler: liegt der Mitspieler deutlich vorn, holt diese Seite schneller auf
+    const maxN = L && L.maxRecv - L.turn > L.delay + 2 ? 10 : 5;
+    if (maxN > 5) acc += SIM_DT * 2;
+    let stalled = false;
+    while (acc >= SIM_DT && n < maxN) {
+      if (L && G.tick % TURN_TICKS === 0) {
+        if (!lsReady(L)) { stalled = true; acc = Math.min(acc, SIM_DT); break; }
+        lsBeginTurn(L);
+        if (L.desync >= 0 && !NET.desyncShown) { NET.desyncShown = true; notify('Die Spielzustände sind auseinandergelaufen (Desync). Bitte neu starten.', true); }
+      }
       for (const u of G.units) { u.px = u.x; u.py = u.y; u.anim += SIM_DT; }
       simStep(SIM_DT); acc -= SIM_DT; n++;
     }
-    if (n >= 5) acc = 0;
+    if (n >= maxN && !stalled) acc = 0;
+    NET.stallT = stalled ? NET.stallT + dt : 0;
+    $('netWait').classList.toggle('hidden', NET.stallT < 0.6);
     renderAlpha = clamp(acc / SIM_DT, 0, 1);
     updateCamera(dt);
     if (G.over) { refreshPanel(true); setTimeout(showEnd, 1200); }
-  }
+  } else $('netWait').classList.add('hidden');
   render();
   renderMinimap(dt);
   updateTopBar();

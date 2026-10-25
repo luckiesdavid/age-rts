@@ -1,12 +1,31 @@
 # Burgfeld
 
-Ein isometrisches Echtzeit-Strategiespiel für den Browser: 1 gegen 1 gegen eine KI. Baue eine Siedlung auf, sammle Ressourcen, sichere deine Basis mit Mauern und Türmen und zerstöre die gegnerische Siedlung.
+Ein isometrisches Echtzeit-Strategiespiel für den Browser: 1 gegen 1 gegen eine KI oder online gegen einen anderen Menschen. Baue eine Siedlung auf, sammle Ressourcen, sichere deine Basis mit Mauern und Türmen und zerstöre die gegnerische Siedlung.
 
-Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Grafiken, Bibliotheken oder Build-Schritte; alle Gebäude, Einheiten und das Gelände werden prozedural auf dem Canvas gezeichnet.
+Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Grafiken oder Build-Schritte (nur der Mehrspielermodus lädt die Netzwerkbibliothek PeerJS nach); alle Gebäude, Einheiten und das Gelände werden prozedural auf dem Canvas gezeichnet.
 
 ## Starten
 
 `index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit wählen, optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
+
+## Mehrspieler über das Internet
+
+Zwei Personen können gegeneinander spielen, auch wenn sie in verschiedenen Netzwerken sind (Internetverbindung nötig).
+
+1. Beide öffnen dieselbe Version von `index.html` und klicken auf **Mehrspieler über das Internet**.
+2. Eine Person klickt auf **Erstellen** und bekommt einen 6-stelligen Code (z. B. `K7MPQ2`).
+3. Die andere Person gibt den Code bei **Spiel beitreten** ein.
+4. Sobald beide verbunden sind, startet der Ersteller das Spiel (optional mit Karten-Seed). Der Ersteller spielt Blau, der Beitretende Rot.
+
+Wird die Seite über einen Webserver ausgeliefert (z. B. GitHub Pages), kann der Ersteller auch einen Link `…/index.html#join=CODE` schicken.
+
+**Technik:** Die Browser verbinden sich direkt per WebRTC (Bibliothek [PeerJS](https://peerjs.com), wird nur im Mehrspielermodus aus dem CDN geladen). Der kostenlose öffentliche PeerJS-Server vermittelt nur den Verbindungsaufbau; STUN und TURN sorgen dafür, dass die Verbindung auch hinter Routern (NAT) und Firewalls zustande kommt. Das Spiel läuft im *deterministischen Lockstep*: Beide Rechner simulieren dasselbe Spiel, es werden nur die Befehle der Spieler übertragen (einige Bytes pro 100 ms). Befehle werden je nach gemessenem Ping 200–800 ms in der Zukunft eingeplant, damit sie bei beiden gleichzeitig ausgeführt werden. Eine Prüfsumme pro Sekunde erkennt, falls die Spielstände doch auseinanderlaufen.
+
+**Hinweise:**
+- Pause (Leertaste/P) gilt für beide. **Aufgeben & Hauptmenü** beendet das Spiel; der Mitspieler gewinnt.
+- Wechselt ein Spieler den Tab, hält der Browser das Spiel an; der Mitspieler sieht dann „Warte auf Mitspieler …“.
+- Eigener Vermittlungsserver statt des öffentlichen: `npx -p peer peerjs --port 9000` starten und das Spiel mit `index.html#peer=dein-server:9000` öffnen (beide Spieler).
+- Test der Lockstep-Logik ohne Browser: `node tests/lockstep-sim.mjs [Minuten] [Seed] [Latenz in Ticks]`.
 
 **Ziel:** Zerstöre alle gegnerischen Gebäude (Mauern zählen nicht) – oder sein Dorfzentrum und alle seine Einheiten. Umgekehrt verlierst du.
 

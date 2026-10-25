@@ -1,0 +1,47 @@
+# Veröffentlicht das Spiel auf GitHub Pages und setzt dabei die Softwareversion.
+# Die Version ergibt sich aus der Anzahl der Commits auf main (nur erste Eltern,
+# also eine pro gemergtem PR): 24 → 2.4, 25 → 2.5, 30 → 3.0 …
+# Dadurch muss kein PR mehr GAME_VERSION ändern, und es gibt keine Konflikte.
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version setzen
+        run: |
+          n=$(git rev-list --count --first-parent HEAD)
+          version="$((n / 10)).$((n % 10))"
+          echo "Version $version ($(git rev-parse --short HEAD))"
+          mkdir _site
+          sed -E "s/^const GAME_VERSION = '[^']*';/const GAME_VERSION = '$version';/" index.html > _site/index.html
+          grep -q "^const GAME_VERSION = '$version';" _site/index.html
+          echo "## Version $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

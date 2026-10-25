@@ -1,5 +1,5 @@
 # Hinweise für Claude
 
-- Softwareversion: Bei **jeder** Änderung `GAME_VERSION` oben im Skript von `index.html` hochzählen (1.5 → 1.6 → …) und dem Nutzer die neue Version nennen. Sie steht im Hauptmenü, im Mehrspieler-Menü und im Mehrspieler oben rechts. GitHub Pages speichert bis zu 10 Minuten zwischen; mit `?v=<Version>` lässt sich das umgehen.
+- Softwareversion: `GAME_VERSION` in `index.html` **nicht** von Hand ändern (dort steht `'dev'`). Der Workflow `.github/workflows/pages.yml` setzt sie beim Veröffentlichen auf GitHub Pages automatisch: Anzahl der Commits auf `main` (nur erste Eltern, also eine pro gemergtem PR) als `X.Y`, z. B. 25 → 2.5. Dadurch gibt es keine Merge-Konflikte mehr. Dem Nutzer die Version nennen, die nach dem Merge entsteht (aktuelle Zahl auf main + 1, sofern vorher kein anderer PR gemergt wird; ermitteln mit `git rev-list --count --first-parent origin/main`). Sie steht im Hauptmenü, im Mehrspieler-Menü und im Mehrspieler oben rechts. GitHub Pages speichert bis zu 10 Minuten zwischen; mit `?v=<Version>` lässt sich das umgehen.
 - Antworten auf Deutsch.
 - Die Simulation (Abschnitte 1–8 in `index.html`) muss deterministisch bleiben (Mehrspieler-Lockstep): Zufall nur über `rnd()`, kein Math.random/hypot/sin/cos/atan2 mit Einfluss auf den Spielzustand. Tests: `node tests/lockstep-sim.mjs`, `node tests/reconnect-sim.mjs`.

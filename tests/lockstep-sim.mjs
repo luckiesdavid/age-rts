@@ -11,10 +11,11 @@ const simSrc = script.slice(0, script.indexOf('/* ============================ 9
 const ctx = vm.createContext({ console, performance });
 vm.runInContext(simSrc + `
 globalThis.api = { get G() { return G; }, set G(v) { G = v; }, newGame, simStep, execCmd, createLockstep, lsQueue,
-  lsReceive, lsReady, lsBeginTurn, stateHash, SIM_DT, TURN_TICKS, BUILDINGS, UNITS, VILLAGER_BUILDS, canPlace, wallLine };`, ctx);
+  lsReceive, lsReady, lsBeginTurn, stateHash, SIM_DT, TURN_TICKS, BUILDINGS, UNITS, TECHS, VILLAGER_BUILDS, canPlace, wallLine };`, ctx);
 const A = ctx.api;
 
 const minutes = +(process.argv[2] || 6), seed = +(process.argv[3] || 12345), lag = +(process.argv[4] || 2);
+const rich = process.argv[5] !== 'arm'; // Standard: mehr Startressourcen, damit Zeitalter, Forschung und Markt vorkommen
 const DELAY = 3;
 let rngState = 987654321;
 const rand = () => { rngState = (Math.imul(rngState, 1103515245) + 12345) >>> 0; return rngState / 4294967296; };
@@ -28,6 +29,7 @@ function wireSend(from, msg) {
 }
 const worlds = [0, 1].map(me => {
   const G = A.newGame(seed, null, { net: true, human: me, headless: true });
+  if (rich) for (const p of G.players) for (const k in p.res) p.res[k] = 4000;
   return { me, G, L: A.createLockstep(2, me, DELAY, msg => wireSend(me, msg)), stalls: 0 };
 });
 
@@ -44,15 +46,19 @@ function randomCmd(w) {
     return { c: 'act', ids: vills.filter(() => rand() < 0.4).map(u => u.id), x: t.x, y: t.y, t: t.id, am: false };
   }
   if (r < 0.55 && vills.length) {
-    const type = ['house', 'barracks', 'range', 'stable', 'farm', 'lumber', 'palisade', 'tower'][Math.floor(rand() * 8)];
+    const types = ['house', 'barracks', 'range', 'stable', 'farm', 'lumber', 'palisade', 'tower', 'blacksmith', 'market', 'mill', 'keep', 'siege'];
+    const type = types[Math.floor(rand() * types.length)];
     const tc = blds.find(b => b.type === 'tc') || vills[0];
     const tx = Math.floor(tc.x + (rand() - 0.5) * 16), ty = Math.floor(tc.y + (rand() - 0.5) * 16);
     const tiles = type === 'palisade' ? A.wallLine(tx, ty, tx + 4, ty).map(t => [t.x, t.y]) : [[tx, ty]];
-    return { c: 'build', ids: [vills[Math.floor(rand() * vills.length)].id], type, tiles };
+    const k0 = Math.floor(rand() * vills.length);
+    return { c: 'build', ids: vills.slice(k0, k0 + (A.BUILDINGS[type].landmark ? 5 : 1)).map(u => u.id), type, tiles };
   }
   if (r < 0.75 && blds.length) {
     const b = blds[Math.floor(rand() * blds.length)];
-    const tr = A.BUILDINGS[b.type].trains;
+    const d = A.BUILDINGS[b.type], tr = d.trains, te = d.techs;
+    if (te && rand() < 0.4) return { c: 'res', id: b.id, tech: te[Math.floor(rand() * te.length)] };
+    if (d.market) return { c: 'mkt', r: ['food', 'wood', 'stone'][Math.floor(rand() * 3)], buy: rand() < 0.5 };
     if (tr) return { c: 'train', ids: [b.id], type: tr[Math.floor(rand() * tr.length)], n: 1 + Math.floor(rand() * 3) };
   }
   if (r < 0.95) {
@@ -67,6 +73,20 @@ function randomCmd(w) {
   return null;
 }
 
+// Feste Abläufe: zu diesen Ticks bauen alle Dorfbewohner ein Wahrzeichen (danach 80 s keine Zufallsbefehle für Dorfbewohner)
+const SCRIPT = { 900: ['lm_school', 'lm_market'], 5400: ['lm_fort', 'lm_treasury'], 10800: ['lm_academy', 'lm_cathedral'] };
+function scriptedCmd(w) {
+  const lm = SCRIPT[w.G.tick]; if (!lm || !rich) return null;
+  const G = w.G, p = w.me, type = lm[p];
+  const tc = G.buildings.find(b => !b.dead && b.owner === p && b.type === 'tc'); if (!tc) return null;
+  let spot = null;
+  for (let r = 4; r < 20 && !spot; r++) for (let dy = -r; dy <= r && !spot; dy++) for (let dx = -r; dx <= r && !spot; dx++) {
+    const x = Math.floor(tc.x) + dx, y = Math.floor(tc.y) + dy; if (A.canPlace(type, x, y, p)) spot = [x, y];
+  }
+  if (!spot) return null;
+  w.quietUntil = G.tick + 80 * 30;
+  return { c: 'build', ids: G.units.filter(u => !u.dead && u.owner === p && u.type === 'villager').map(u => u.id), type, tiles: [spot] };
+}
 const maxTicks = minutes * 60 * 30;
 let tick = 0, cmdsSent = 0;
 while (tick < maxTicks * 3) {
@@ -78,7 +98,8 @@ while (tick < maxTicks * 3) {
   for (const w of worlds) {
     A.G = w.G;
     if (w.G.over || w.G.tick >= maxTicks) continue;
-    if (rand() < 0.04) { const c = randomCmd(w); if (c) { A.lsQueue(w.L, c); cmdsSent++; } }
+    const sc = scriptedCmd(w); if (sc) { A.lsQueue(w.L, sc); cmdsSent++; }
+    if (rand() < 0.04) { const c = randomCmd(w); if (c && !(w.quietUntil > w.G.tick && c.ids && c.ids.some(id => { const e = w.G.byId.get(id); return e && e.type === 'villager'; }))) { A.lsQueue(w.L, c); cmdsSent++; } }
     if (w.G.tick % A.TURN_TICKS === 0) {
       if (!A.lsReady(w.L)) { w.stalls++; continue; }
       A.lsBeginTurn(w.L);
@@ -91,7 +112,8 @@ while (tick < maxTicks * 3) {
 const hashes = worlds.map(w => { A.G = w.G; return A.stateHash(); });
 const summary = worlds.map(w => ({
   tick: w.G.tick, units: w.G.units.filter(u => !u.dead).length, buildings: w.G.buildings.filter(b => !b.dead).length,
-  res: w.G.players.map(p => Object.values(p.res).map(Math.floor).join('/')), stalls: w.stalls, desync: w.L.desync, over: w.G.over,
+  res: w.G.players.map(p => Object.values(p.res).map(Math.floor).join('/')), age: w.G.players.map(p => p.age),
+  techs: w.G.players.map(p => Object.keys(p.techs).length), stalls: w.stalls, desync: w.L.desync, over: w.G.over,
 }));
 console.log(JSON.stringify({ cmdsSent, hashes, summary }, null, 1));
 const ok = hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick;

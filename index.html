@@ -121,6 +121,7 @@ html, body {
 
 /* ---------- Bildschirme ---------- */
 /* Menüs: Pergament in einem Rahmen aus dunklem Holz und Messing, Überschriften in Cinzel */
+.verLabel { text-align: center; font-size: 12px; opacity: .6; letter-spacing: .5px; }
 .screen {
   position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
   padding: 16px calc(16px + var(--safeR)) calc(16px + var(--safeB)) calc(16px + var(--safeL));
@@ -443,6 +444,7 @@ body.touch .touchKeys { display: block; }
       <h1>Burgfeld</h1>
       <div class="orn"></div>
       <h2>Ein isometrisches Echtzeit-Strategiespiel</h2>
+      <div class="verLabel" id="startVersion"></div>
     </div>
     <div class="startOpts">
     <h3>Schwierigkeit des Gegners</h3>
@@ -605,6 +607,8 @@ body.touch .touchKeys { display: block; }
    ===================================================================== */
 
 /* ============================ 1. KONFIGURATION ============================ */
+// Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
+const GAME_VERSION = '1.5';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -5295,8 +5299,6 @@ function setPaused(on, byOther) {
 // Verbindungsaufbau; STUN/TURN sorgen dafür, dass es auch hinter Routern (NAT) und Firewalls klappt.
 // Eigener Vermittlungsserver (z. B. `npx -p peer peerjs --port 9000`): index.html#peer=host:9000 öffnen.
 const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js'];
-// Bei jeder Änderung am Mehrspieler hochzählen: im Menü sichtbar, damit man erkennt, ob die neue Version geladen ist
-const GAME_VERSION = '2026-10-25 · 4';
 const NET_PROTO = 1;            // Protokollversion; beide Seiten müssen dieselbe Spielversion nutzen
 const NET_PREFIX = 'burgfeld-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -5311,7 +5313,7 @@ const ST_CHUNK = 7000;     // Spielstand in Stücken übertragen (PeerJS erlaubt
 
 function mpStatus(text, err) { const el = $('mpStatus'); el.innerHTML = text; el.classList.toggle('err', !!err); }
 function showMPScreen() {
-  $('mpVersion').textContent = 'Version ' + GAME_VERSION + (METERED_USER ? ' · Relay eingebaut' : '');
+  $('mpVersion').textContent = 'Version ' + GAME_VERSION + (METERED_USER ? ' · Relay eingebaut' : '') + ' · Relay-Verbrauch dieses Geräts im Monat: ' + fmtBytes(relayUsage().bytes);
   $('startScreen').classList.add('hidden'); $('mpScreen').classList.remove('hidden'); $('mpLobby').classList.add('hidden');
   mpStatus(''); $('mpPing').textContent = ''; renderMPResume();
   const m = /(?:^|[#&])join=([A-Za-z0-9]{6})/.exec(location.hash);
@@ -5552,6 +5554,38 @@ function netAttach(conn) {
   conn.on('close', () => { if (NET.conn === conn) netLost(conn); });
   conn.on('error', e => { NET.lastErr = e; if (NET.conn === conn) netLost(conn); });
 }
+/* ---------- Netzverbrauch ----------
+   Aus den WebRTC-Statistiken: übertragene Bytes der aktuellen Verbindung und ob sie über den Relay (TURN) läuft.
+   Nur Relay-Verkehr zählt beim Metered-Kontingent; er wird je Monat in localStorage mitgezählt. */
+const USAGE_KEY = 'burgfeld.relayUsage';
+function fmtBytes(b) { return b < 1024 * 1024 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1).replace('.', ',') + ' MB'; }
+function relayUsage() {
+  const month = new Date().toISOString().slice(0, 7);
+  try { const u = JSON.parse(localStorage.getItem(USAGE_KEY)); if (u && u.month === month) return u; } catch (e) {}
+  return { month, bytes: 0 };
+}
+async function netPollStats() {
+  const conn = NET.conn, pc = conn && conn.peerConnection;
+  if (!pc || !pc.getStats) return;
+  let stats; try { stats = await pc.getStats(); } catch (e) { return; }
+  let pair = null;
+  stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId) || pair; });
+  if (!pair) stats.forEach(r => { if (r.type === 'candidate-pair' && (r.selected || (r.nominated && r.state === 'succeeded'))) pair = r; });
+  if (!pair) return;
+  const loc = stats.get(pair.localCandidateId), rem = stats.get(pair.remoteCandidateId);
+  const relay = (loc && loc.candidateType === 'relay') || (rem && rem.candidateType === 'relay');
+  const total = (pair.bytesSent || 0) + (pair.bytesReceived || 0);
+  const S = NET.stats && NET.stats.pc === pc ? NET.stats : (NET.stats = { pc, last: 0, game: NET.stats ? NET.stats.game : 0 });
+  const delta = Math.max(0, total - S.last); S.last = total; S.game += delta; S.relay = relay; S.localRelay = !!(loc && loc.candidateType === 'relay');
+  // Nur der Relay-Verkehr der eigenen Seite zählt (läuft er über die Seite des Mitspielers, zählt er dort)
+  if (S.localRelay && delta) { const u = relayUsage(); u.bytes += delta; try { localStorage.setItem(USAGE_KEY, JSON.stringify(u)); } catch (e) {} }
+}
+function netUpdateLabel() {
+  const S = NET.stats;
+  const net = S ? ' · Netz ' + fmtBytes(S.game) + (S.relay ? ' (Relay)' : ' (direkt)') : '';
+  $('diffLabel').textContent = 'Mehrspieler · Ping ' + NET.ping + ' ms' + net + ' · v' + GAME_VERSION;
+  $('diffLabel').title = 'Seed ' + G.seed + ' · Relay-Verbrauch dieses Geräts im ' + relayUsage().month + ': ' + fmtBytes(relayUsage().bytes);
+}
 function netHello() {
   const live = !!(running && G && G.net && !G.over && NET.ls), save = mpSaveMeta();
   return { k: 'hello', v: NET_PROTO, live, gid: live ? G.gid : null, tick: live ? G.tick : 0, turn: live ? NET.ls.turn : 0, e: live ? NET.ls.e : 0,
@@ -5561,7 +5595,7 @@ function netStartPing() {
   NET.lastRecv = performance.now();
   clearInterval(NET.pingT);
   NET.pingT = setInterval(() => {
-    netSend({ k: 'ping', ts: performance.now() });
+    netSend({ k: 'ping', ts: performance.now() }); netPollStats();
     // WebRTC bemerkt einen Abbruch oft erst nach 30 s – kommt einige Sekunden lang nichts an, gilt die Verbindung als getrennt
     if (NET.conn && NET.ready && performance.now() - NET.lastRecv > NET_TIMEOUT) {
       const c = NET.conn; NET.conn = null; try { c.close(); } catch (e) {}
@@ -5722,7 +5756,7 @@ function netOnData(m) {
     case 'pong':
       NET.ping = Math.round(performance.now() - m.ts);
       if (!running) $('mpPing').textContent = 'Ping: ' + NET.ping + ' ms';
-      if (running && G && G.net) $('diffLabel').textContent = 'Mehrspieler · Ping ' + NET.ping + ' ms · Seed ' + G.seed;
+      if (running && G && G.net) netUpdateLabel();
       break;
     case 'start': if (NET.role === 'guest') netStartGame(m.seed, m.delay, MAPS[m.map] ? m.map : 'balanced', m.gid); break;
     case 'pull': netSendState(netStateNow(), m.e, m.delay); break; // der Ersteller möchte unseren (neueren) Stand
@@ -5755,7 +5789,7 @@ function netStartAsHost() {
 }
 function netStartGame(seed, delay, map, gid) {
   $('mpScreen').classList.add('hidden');
-  NET.desyncShown = false; NET.stallT = 0; NET.early = [];
+  NET.desyncShown = false; NET.stallT = 0; NET.early = []; NET.stats = null;
   NET.ls = createLockstep(2, NET.me, delay, msg => netSend({ k: 't', t: msg.t, c: msg.c, h: msg.h, e: 0 }), 0);
   startGame(seed, null, map, { net: true, human: NET.me });
   G.gid = gid || genCode(); // Kennung des Spiels, damit sich nur derselbe Mitspieler wieder verbinden kann
@@ -6207,6 +6241,7 @@ function frame(t) {
   notifyTick();
 }
 function boot() {
+  $('startVersion').textContent = 'Version ' + GAME_VERSION;
   resize();
   window.addEventListener('resize', resize);
   makeIcons();

@@ -116,6 +116,7 @@ html, body {
 #msgs div { background: rgba(20,14,8,.8); border: 1px solid #6b4f31; padding: 5px 14px; margin-bottom: 5px; border-radius: 3px; box-shadow: 0 2px 8px rgba(0,0,0,.35);
   font-size: 15px; transition: opacity .5s; }
 #msgs div.warn { color: #ffb0a0; border-color: #a5463a; }
+#msgs div.go { pointer-events: auto; cursor: pointer; }
 
 #fps { position: fixed; right: calc(8px + var(--safeR)); top: calc(var(--topH) + 6px); z-index: 6; font: 11px monospace; color: #cbb; opacity: .6; pointer-events: none; }
 
@@ -508,6 +509,7 @@ body.touch .touchKeys { display: block; }
       <b>Doppelt tippen</b> alle gleichen Einheiten im Bild<br>
       <b>Wischen</b> Kamera bewegen, <b>zwei Finger</b> zoomen<br>
       <b>Minikarte</b> antippen: Kamera springt hin<br>
+      <b>Angriffsmeldung</b> antippen: Kamera springt zum Angriff<br>
       <b>Befehlsknopf lange drücken</b> zeigt Kosten und Infos<br>
       <b>Abwählen / Mehrfach / Untätig / Zentrum / Armee</b> oben links im Spiel
     </div>
@@ -519,6 +521,7 @@ body.touch .touchKeys { display: block; }
       </div>
       <div class="ctlEdge"><button class="sbtn" id="btnEdgeStart"></button></div>
     </div>
+    <div class="ctlEdge"><button class="sbtn" id="btnSoundStart"></button></div>
     <div class="keys mouseKeys">
       <b>Touchpad:</b> <b>zwei Finger schieben</b> Kamera, <b>Pinch</b> Zoom, <b>Klick mit zwei Fingern</b> Befehl<br>
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
@@ -530,7 +533,7 @@ body.touch .touchKeys { display: block; }
       <b>Mausrad</b>, <b>Pinch</b> oder <b>+ / −</b> Zoom<br>
       <b>H</b> Dorfzentrum, <b>.</b> untätiger Dorfbewohner, <b>Komma</b> ganze Armee<br>
       <b>Ctrl+1–9</b> oder <b>Option+1–9</b> Gruppe setzen, <b>1–9</b> Gruppe wählen<br>
-      <b>R</b> beim Platzieren: Gebäude drehen<br>
+      <b>R</b> beim Platzieren: Gebäude drehen, <b>J</b> zum letzten Angriff springen<br>
       <b>Esc</b> abbrechen, <b>Leertaste/P</b> Pause, <b>Entf</b> Gebäude abreißen<br>
       <b>F5</b> oder <b>Cmd/Ctrl+S</b> Spiel speichern
     </div>
@@ -622,6 +625,7 @@ body.touch .touchKeys { display: block; }
       <button class="bigbtn alt" id="btnDiff"></button>
       <button class="bigbtn alt deskOnly" id="btnCtrlMode"></button>
       <button class="bigbtn alt deskOnly" id="btnEdge"></button>
+      <button class="bigbtn alt" id="btnSound"></button>
       <button class="bigbtn alt hidden" id="btnSaveLater">Unterbrechen &amp; später weiterspielen</button>
       <button class="bigbtn alt quiet" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
     </div>
@@ -1658,9 +1662,12 @@ function calcDamage(src, t, owner) {
   if (t.def.military && !t.def.siege && t.owner < GAIA) { const a = G.players[t.owner].armUp; if (a && a[src.atkType]) dmg -= a[src.atkType]; }
   return Math.max(0.2, dmg);
 }
-function applyDamage(t, amount, src) {
+// by: Besitzer des Angreifers, falls src fehlt (Geschoss eines inzwischen gefallenen Schützen)
+function applyDamage(t, amount, src, by) {
   if (!alive(t) || amount <= 0) return;
   t.hp -= amount;
+  // Angriffsmeldung (nur Anzeige und Ton, verändert den Spielzustand nicht)
+  if (G.onHit && t.owner < GAIA) { const o = src ? src.owner : by; if (o !== undefined && o !== t.owner && !allies(o, t.owner)) G.onHit(t, o); }
   if (t.kind === 'unit' && src && alive(src)) t.lastAttacker = src;
   if (t.kind === 'bld' && src && src.owner < GAIA) t.lastHit = G.time;
   if (t.hp <= 0) {
@@ -2314,16 +2321,16 @@ function updateProjectiles(dt) {
         queryUnits(p.tx, p.ty, sr, u => {
           if (!foes(p.owner, u.owner)) return;
           const fall = 1 - dist(u.x, u.y, p.tx, p.ty) / sr * 0.5;
-          applyDamage(u, calcDamage(p.def, u, p.owner) * fall, alive(p.src) ? p.src : null);
+          applyDamage(u, calcDamage(p.def, u, p.owner) * fall, alive(p.src) ? p.src : null, p.owner);
         });
         queryBuildings(p.tx, p.ty, sr * 0.6, b => {
           if (!foes(p.owner, b.owner)) return;
-          applyDamage(b, calcDamage(p.def, b, p.owner), alive(p.src) ? p.src : null);
+          applyDamage(b, calcDamage(p.def, b, p.owner), alive(p.src) ? p.src : null, p.owner);
         });
       } else if (alive(p.target)) {
         const t = p.target;
         const hit = t.kind === 'bld' ? true : dist(t.x, t.y, p.tx, p.ty) < 0.7;
-        if (hit) applyDamage(t, calcDamage(p.def, t, p.owner), alive(p.src) ? p.src : null);
+        if (hit) applyDamage(t, calcDamage(p.def, t, p.owner), alive(p.src) ? p.src : null, p.owner);
       }
       ps[k] = ps[ps.length - 1]; ps.pop();
     }
@@ -5088,6 +5095,7 @@ function notifyTick() {
   while (G.msgs.length) {
     const m = G.msgs.shift();
     const d = document.createElement('div'); d.textContent = m.text; if (m.warn) d.className = 'warn';
+    if (m.at) { d.classList.add('go'); d.addEventListener('click', e => { e.stopPropagation(); if (running && !paused) centerOn(m.at.x, m.at.y); }); }
     box.appendChild(d);
     setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 600); }, 3800);
     while (box.children.length > 4) box.firstChild.remove();
@@ -5456,6 +5464,99 @@ function renderCtrl() {
   $('btnCtrlMode').textContent = 'Bedienung: ' + CTRL_NAMES[CTRL.mode];
   $('btnEdge').textContent = $('btnEdgeStart').textContent = 'Kamera am Bildschirmrand: ' + (CTRL.edge ? 'an' : 'aus');
 }
+
+/* ---------- Angriffsmeldung mit Warnton ----------
+   Wird aus applyDamage aufgerufen, ändert aber nur Anzeige und Ton (nie den Spielzustand).
+   Ein Kampf an einer Stelle meldet sich einmal; erst nach ALERT_QUIET s Ruhe dort oder bei einem
+   Angriff anderswo wieder. Liegt die Stelle im Bild, gibt es nur das Blinken auf der Minikarte. */
+const ALERT = { spots: [], last: null, msgT: -99 };
+const ALERT_QUIET = 20, ALERT_NEAR = 14;
+function onAttackHit(t, by) {
+  const me = G.human;
+  if (G.headless || me < 0) return;
+  const own = t.owner === me;
+  // Verbündete: nur Angriffe auf Gebäude, sonst meldet jedes Gefecht der KI
+  if (!own && !(allies(t.owner, me) && t.kind === 'bld')) return;
+  let spot = ALERT.spots.find(a => a.own === own && Math.abs(a.x - t.x) < ALERT_NEAR && Math.abs(a.y - t.y) < ALERT_NEAR);
+  const fresh = !spot || G.time - spot.t > ALERT_QUIET;
+  if (!spot) { spot = { own }; ALERT.spots.push(spot); if (ALERT.spots.length > 8) ALERT.spots.shift(); }
+  spot.t = G.time;
+  if (!fresh) return;
+  spot.x = t.x; spot.y = t.y;
+  UI.alerts.push({ x: t.x, y: t.y, t: G.time }); if (UI.alerts.length > 6) UI.alerts.shift();
+  const s = w2s(t.x, t.y);
+  if (s.x > 0 && s.x < VW && s.y > UI_TOP && s.y < VH - UI_BOT) return;
+  ALERT.last = { x: t.x, y: t.y };
+  playHorn(!own);
+  if (G.time - ALERT.msgT < 4) return;
+  ALERT.msgT = G.time;
+  const what = !own ? 'Verbündeter ' + PLAYER_COLORS[t.owner].name + ': ' + BUILDINGS[t.type].name + ' wird angegriffen!'
+    : t.kind === 'bld' ? BUILDINGS[t.type].name + ' wird angegriffen!'
+    : t.type === 'villager' ? 'Deine Dorfbewohner werden angegriffen!' : 'Deine Einheiten werden angegriffen!';
+  G.msgs.push({ text: what + (IS_TOUCH ? ' (antippen)' : ' (J)'), warn: true, t: G.time, at: ALERT.last });
+}
+function jumpToAlert() {
+  if (ALERT.last) centerOn(ALERT.last.x, ALERT.last.y); else notifyLocal('Noch kein Angriff gemeldet.', false);
+}
+
+// Ton per WebAudio erzeugt (keine Tondateien). Browser, allen voran Safari/iOS, erlauben Ton erst nach
+// einer Nutzeraktion: der AudioContext wird deshalb beim ersten Tippen, Klicken oder Tastendruck angelegt.
+const SND_KEY = 'burgschiltberg.sound';
+const SND = { on: true, ctx: null, hornT: -1e9 };
+try { const c = JSON.parse(localStorage.getItem(SND_KEY)); if (c && c.on === false) SND.on = false; } catch (e) { /* ignorieren */ }
+function setSound(on) {
+  SND.on = on;
+  try { localStorage.setItem(SND_KEY, JSON.stringify({ on })); } catch (e) { /* ignorieren */ }
+  renderSound();
+  if (on) { audioUnlock(); SND.hornT = -1e9; setTimeout(() => playHorn(false), 60); } // Hörprobe
+}
+function renderSound() { $('btnSound').textContent = $('btnSoundStart').textContent = 'Warnton bei Angriffen: ' + (SND.on ? 'an' : 'aus'); }
+function audioUnlock() {
+  if (!SND.on) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    if (!SND.ctx) {
+      SND.ctx = new AC();
+      // ein stiller Puffer schaltet den Ton unter iOS frei
+      const src = SND.ctx.createBufferSource(); src.buffer = SND.ctx.createBuffer(1, 1, 22050); src.connect(SND.ctx.destination); src.start(0);
+    }
+    if (SND.ctx.state !== 'running') SND.ctx.resume();
+  } catch (e) { /* ohne Ton weiter */ }
+}
+for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, audioUnlock, { capture: true, passive: true });
+// Kriegshorn: zwei Stöße (kurz, lang), Sägezahn durch Tiefpass mit Anblas-Glissando und leichtem Vibrato.
+// soft: ein einzelner, leiserer Stoß (Angriff auf einen Verbündeten). Höchstens alle 8 s.
+function playHorn(soft) {
+  const ac = SND.ctx;
+  if (!SND.on || !ac || ac.state !== 'running' || document.hidden) return;
+  const now = performance.now();
+  if (now - SND.hornT < 8000) return;
+  SND.hornT = now;
+  const out = ac.createGain(); out.gain.value = soft ? 0.6 : 1.1; out.connect(ac.destination);
+  const notes = soft ? [[0, 0.55]] : [[0, 0.3], [0.4, 1.05]];
+  const t0 = ac.currentTime + 0.03, f = 174.6; // F3
+  for (const [at, len] of notes) {
+    const s = t0 + at, e = s + len;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.2;
+    lp.frequency.setValueAtTime(350, s); lp.frequency.linearRampToValueAtTime(1500, s + 0.09); lp.frequency.linearRampToValueAtTime(1100, e);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.5, s + 0.07);
+    g.gain.setValueAtTime(0.5, e - 0.12); g.gain.exponentialRampToValueAtTime(0.0001, e);
+    lp.connect(g); g.connect(out);
+    const vib = ac.createOscillator(), vibG = ac.createGain(); vib.frequency.value = 5.2; vibG.gain.value = 1.6; vib.connect(vibG);
+    for (const [mul, type, vol] of [[1, 'sawtooth', 0.32], [1.006, 'sawtooth', 0.22], [0.5, 'triangle', 0.35]]) {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = type; og.gain.value = vol;
+      o.frequency.setValueAtTime(f * mul * 0.93, s); o.frequency.exponentialRampToValueAtTime(f * mul, s + 0.08);
+      o.frequency.setValueAtTime(f * mul, e - 0.15); o.frequency.linearRampToValueAtTime(f * mul * 0.97, e);
+      vibG.connect(o.frequency); o.connect(og); og.connect(lp);
+      o.start(s); o.stop(e + 0.02);
+    }
+    vib.start(s); vib.stop(e + 0.02);
+  }
+}
+
 // Kommt dieses Scroll-Ereignis vom Touchpad (zwei Finger) oder von einem Mausrad?
 function wheelIsPad(e) {
   if (CTRL.mode !== 'auto') return CTRL.mode === 'pad';
@@ -5693,6 +5794,7 @@ function setupInput() {
       return;
     }
     if (k === 'h') { selectTownCenter(); return; }
+    if (k === 'j' && !(UI.hotkeys && UI.hotkeys.J)) { jumpToAlert(); return; }
     if (k === '.') { selectIdleVillager(); return; }
     if (k === ',') { selectArmy(); return; }
     if (!e.ctrlKey && !e.metaKey && (k === '+' || k === '=' || k === '-')) { e.preventDefault(); zoomCenter(k === '-' ? 1 / 1.15 : 1.15); return; }
@@ -5737,6 +5839,9 @@ function setupInput() {
   $('btnDiff').addEventListener('click', () => { const d = Object.keys(DIFFS); setDifficulty(d[(d.indexOf(G.diff) + 1) % d.length]); });
   $('btnEdgeStart').addEventListener('click', () => setCtrl(null, !CTRL.edge));
   renderCtrl();
+  $('btnSound').addEventListener('click', () => setSound(!SND.on));
+  $('btnSoundStart').addEventListener('click', () => setSound(!SND.on));
+  renderSound();
   $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
   $('btnLoadStart').addEventListener('click', () => openSaveScreen('load'));
   $('btnSaveBack').addEventListener('click', closeSaveScreen);
@@ -6595,14 +6700,8 @@ function startGame(seed, diff, map, opts) {
 // Gemeinsamer Teil für neues und geladenes Spiel
 function beginSession() {
   makeIcons(Math.max(0, G.human));
-  UI.alerts = []; let lastAlert = -99;
-  G.onHit = t => {
-    if (G.time - lastAlert < 12) return;
-    // nur melden, wenn der Ort nicht ohnehin im Bild ist
-    const s = w2s(t.x, t.y); const onScreen = s.x > 0 && s.x < VW && s.y > UI_TOP && s.y < VH - UI_BOT;
-    lastAlert = G.time; UI.alerts.push({ x: t.x, y: t.y, t: G.time }); if (UI.alerts.length > 6) UI.alerts.shift();
-    if (!onScreen) notify(t.kind === 'bld' ? BUILDINGS[t.type].name + ' wird angegriffen!' : 'Deine Einheiten werden angegriffen!', true);
-  };
+  UI.alerts = []; ALERT.spots = []; ALERT.last = null; ALERT.msgT = -99;
+  G.onHit = onAttackHit;
   UI.sel = []; UI.selSet = new Set(); UI.placing = null; UI.cmdMode = null; UI.buildMenu = null; UI.lastSelKey = '';
   $('msgs').innerHTML = '';
   buildTerrain();

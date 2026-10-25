@@ -590,6 +590,7 @@ body.touch .touchKeys { display: block; }
       <button class="bigbtn" id="btnResume">Fortsetzen</button>
       <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
       <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
+      <button class="bigbtn alt" id="btnDiff"></button>
       <button class="bigbtn alt deskOnly" id="btnCtrlMode"></button>
       <button class="bigbtn alt deskOnly" id="btnEdge"></button>
       <button class="bigbtn alt hidden" id="btnSaveLater">Unterbrechen &amp; später weiterspielen</button>
@@ -624,7 +625,7 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '2.1';
+const GAME_VERSION = '2.2';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -5341,6 +5342,7 @@ function setupInput() {
   document.querySelectorAll('[data-ctrl]').forEach(b => b.addEventListener('click', () => setCtrl(b.dataset.ctrl)));
   $('btnCtrlMode').addEventListener('click', () => { const m = Object.keys(CTRL_NAMES); setCtrl(m[(m.indexOf(CTRL.mode) + 1) % m.length]); });
   $('btnEdge').addEventListener('click', () => setCtrl(null, !CTRL.edge));
+  $('btnDiff').addEventListener('click', () => { const d = Object.keys(DIFFS); setDifficulty(d[(d.indexOf(G.diff) + 1) % d.length]); });
   $('btnEdgeStart').addEventListener('click', () => setCtrl(null, !CTRL.edge));
   renderCtrl();
   $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
@@ -5415,6 +5417,28 @@ function setPaused(on, byOther) {
   $('pauseScreen').classList.toggle('hidden', !paused);
   $('pauseBy').textContent = byOther ? 'Dein Mitspieler hat pausiert.' : 'Leertaste oder P zum Fortsetzen';
   INPUT.keys.clear();
+}
+
+// Schwierigkeit des Gegners im laufenden Spiel ändern (nur Einzelspieler, im Mehrspieler gibt es keine KI)
+function setDifficulty(diff) {
+  if (!G || G.net || !DIFFS[diff]) return;
+  const d = DIFFS[diff];
+  G.diff = diff;
+  for (const ai of G.ais) {
+    // Steht der erste Angriff noch aus, gilt der Zeitpunkt der neuen Stufe, frühestens aber in 30 s
+    if (ai.wave === 0 && ai.nextAttack === ai.d.firstAttack) ai.nextAttack = Math.max(d.firstAttack, ai.t + 30);
+    ai.diff = diff; ai.d = d;
+    G.players[ai.owner].gatherMult = d.gather;
+  }
+  updateDiffUI();
+  notify('Schwierigkeit des Gegners: ' + d.name);
+}
+function updateDiffUI() {
+  if (!G) return;
+  $('btnDiff').textContent = 'Gegner: ' + DIFFS[G.diff].name;
+  $('btnDiff').classList.toggle('hidden', !!G.net);
+  $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[G.diff].name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
+  $('diffLabel').title = $('diffLabel').textContent;
 }
 
 /* ============================ 12. MEHRSPIELER (INTERNET) ============================ */
@@ -6162,8 +6186,7 @@ function beginSession() {
   $('topbar').classList.remove('hidden'); $('bottom').classList.remove('hidden'); $('touchBar').classList.remove('hidden');
   TOUCH.multi = false; TOUCH.kin = null; $('tbMulti').classList.remove('on');
   layoutUI(); tryFullscreen();
-  $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[G.diff].name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
-  $('diffLabel').title = $('diffLabel').textContent;
+  updateDiffUI();
   paused = false; running = true; acc = 0;
   $('btnSaveMenu').classList.toggle('hidden', G.net); $('btnLoadMenu').classList.toggle('hidden', G.net); $('btnSaveLater').classList.toggle('hidden', !G.net);
   G.nextAutosave = G.time + AUTOSAVE_EVERY;

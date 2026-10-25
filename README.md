@@ -6,7 +6,7 @@ Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Graf
 
 ## Starten
 
-`index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit wählen, optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
+`index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit und die Karte wählen (**Wüste**: Sand, Oasen mit Palmen, wenig Holz, ein zusätzliches Goldvorkommen · **Ausgeglichen**: Wiesen, Wälder und Seen · **Waldland**: dichte Wälder mit Lichtungen), optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
 
 **Speichern:** Im Pausenmenü (oder mit **F5** bzw. **Cmd/Ctrl + S**) gibt es drei Speicherplätze. Zusätzlich speichert das Spiel alle zwei Minuten Spielzeit und beim Schließen des Tabs automatisch. Im Startbildschirm setzt **Letzten Spielstand fortsetzen** den neuesten Stand fort, **Spiel laden** zeigt alle Plätze. Spielstände liegen im Speicher des Browsers (localStorage), also nur in dem Browser, in dem gespielt wurde.
 

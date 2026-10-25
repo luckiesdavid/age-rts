@@ -299,6 +299,7 @@ html, body {
   border: 1px solid rgba(0,0,0,.6); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
 #btnPlaceOk { background: linear-gradient(#4f9a3a, #2d6a1f); }
 #btnPlaceNo { background: linear-gradient(#8e3a2c, #5a1d14); }
+#btnPlaceRot { background: linear-gradient(#6a5434, #3e2f1a); }
 body:not(.touch) #touchBar, body:not(.touch) #placeBar { display: none !important; }
 body.touch #msgs { top: calc(var(--topH) + 52px); }
 body.touch .cbtn .hk { display: none; }
@@ -435,7 +436,7 @@ body.touch .touchKeys { display: block; }
   <button class="tchBtn" id="tbTC">Zentrum</button>
   <button class="tchBtn" id="tbArmy">Armee</button>
 </div>
-<div id="placeBar" class="hidden"><button id="btnPlaceOk">✓ Bauen</button><button id="btnPlaceNo">✕ Abbrechen</button></div>
+<div id="placeBar" class="hidden"><button id="btnPlaceRot">⟳ Drehen</button><button id="btnPlaceOk">✓ Bauen</button><button id="btnPlaceNo">✕ Abbrechen</button></div>
 
 <div id="tooltip" class="hidden"></div>
 <div id="msgs"></div>
@@ -500,6 +501,7 @@ body.touch .touchKeys { display: block; }
       <b>Mausrad</b>, <b>Pinch</b> oder <b>+ / −</b> Zoom<br>
       <b>H</b> Dorfzentrum, <b>.</b> untätiger Dorfbewohner, <b>Komma</b> ganze Armee<br>
       <b>Ctrl+1–9</b> oder <b>Option+1–9</b> Gruppe setzen, <b>1–9</b> Gruppe wählen<br>
+      <b>R</b> beim Platzieren: Gebäude drehen<br>
       <b>Esc</b> abbrechen, <b>Leertaste/P</b> Pause, <b>Entf</b> Gebäude abreißen<br>
       <b>F5</b> oder <b>Cmd/Ctrl+S</b> Spiel speichern
     </div>
@@ -1868,7 +1870,9 @@ function canPlace(type, tx, ty, owner, ignoreUnits) {
   }
   return true;
 }
-function placeBuilding(type, tx, ty, owner, instant) {
+// Drehbar sind alle quadratischen Gebäude außer Mauern/Toren; rot 0/1 = Ausrichtung (nur Grafik, Grundfläche bleibt gleich)
+function canRotate(type) { const d = BUILDINGS[type]; return !!d && !d.wall && d.w === d.h; }
+function placeBuilding(type, tx, ty, owner, instant, rot) {
   const d = BUILDINGS[type];
   // Tor ersetzt Mauersegment
   if (d.gate) { const old = G.bld[ty * N + tx]; if (old) removeBuildingSilently(old); }
@@ -1876,7 +1880,7 @@ function placeBuilding(type, tx, ty, owner, instant) {
     id: G.nextId++, kind: 'bld', type, owner, tx, ty, w: d.w, h: d.h, x: tx + d.w / 2, y: ty + d.h / 2,
     hp: instant ? d.hp : Math.max(1, d.hp * 0.05), maxHp: d.hp, built: !!instant, progress: instant ? 1 : 0,
     builders: 0, buildersNow: 0, queue: [], prodT: 0, rally: null, cd: 0, farmer: 0, dead: false, lastHit: -99,
-    seed: (tx * 31 + ty * 17) % 97,
+    seed: (tx * 31 + ty * 17) % 97, rot: rot && canRotate(type) ? 1 : 0,
   };
   G.buildings.push(b); G.byId.set(b.id, b);
   for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) { G.bld[y * N + x] = b; updateTile(y * N + x); }
@@ -2379,7 +2383,7 @@ function execBuild(p, c) {
     if (!canPlace(c.type, tx, ty, p)) continue;
     if (!canAfford(pl, d.cost)) { cmdMsg(p, 'Nicht genug Ressourcen.'); break; }
     pay(pl, d.cost);
-    placed.push(placeBuilding(c.type, tx, ty, p, false));
+    placed.push(placeBuilding(c.type, tx, ty, p, false, c.rot === 1 ? 1 : 0));
   }
   if (!placed.length) { if (c.tiles.length === 1) cmdMsg(p, 'Hier kann nicht gebaut werden.'); return; }
   // Bauarbeiter: erstes Gebäude, Rest folgt automatisch (autoNextBuild)
@@ -2436,7 +2440,7 @@ function stateHash() {
   const mixN = v => { HASH_F64[0] = v; h = Math.imul(h ^ HASH_U32[0], 16777619); h = Math.imul(h ^ HASH_U32[1], 16777619); };
   mixN(G.tick); mixN(G.nextId);
   for (const u of G.units) if (!u.dead) { mixN(u.id); mixN(u.x); mixN(u.y); mixN(u.hp); }
-  for (const b of G.buildings) if (!b.dead) { mixN(b.id); mixN(b.hp); mixN(b.progress); mixN(b.queue.length); }
+  for (const b of G.buildings) if (!b.dead) { mixN(b.id); mixN(b.hp); mixN(b.progress); mixN(b.queue.length); mixN(b.rot | 0); }
   for (const r of G.resources) if (!r.dead) mixN(r.amount);
   for (const p of G.players) { for (const k of RES_TYPES) mixN(p.res[k]); mixN(p.age); }
   return h >>> 0;
@@ -3039,6 +3043,9 @@ function segF(c, F, u0, v0, u1, v1) { const a = F(u0, v0), b = F(u1, v1); c.move
 
 const PLASTER = '#e4d6b2', TIMBER = '#5b3b1f', STONE = '#a59e90', WOOD = '#8e5f31', DIRT = '#9c8358';
 const SHADE_L = 0.9, SHADE_R = 0.7; // Licht von links oben
+// Gespiegelte (gedrehte) Gebäude-Sprites: Licht soll trotzdem von links kommen, also Helligkeit links/rechts tauschen
+let SPR_MIR = false;
+const LR = (l, r) => SPR_MIR ? r : l;
 function roofCol(owner) { return mix(PLAYER_COLORS[owner].main, '#5a3a22', 0.22); }
 
 // Wand mit Material: plaster (Fachwerk), stone, planks, logs
@@ -3097,16 +3104,16 @@ function wallFace(c, F, len, hgt, mat, k, rnd) {
 // Quader mit zwei sichtbaren Wänden (links: y1-Seite, rechts: x1-Seite)
 function solid(c, x0, y0, x1, y1, z0, z1, mat, rnd, opt) {
   opt = opt || {};
-  wallFace(c, faceFn(x0, y1, x1, y1, z0, z1), x1 - x0, z1 - z0, mat, SHADE_L, rnd);
-  wallFace(c, faceFn(x1, y1, x1, y0, z0, z1), y1 - y0, z1 - z0, mat, SHADE_R, rnd);
+  wallFace(c, faceFn(x0, y1, x1, y1, z0, z1), x1 - x0, z1 - z0, mat, LR(SHADE_L, SHADE_R), rnd);
+  wallFace(c, faceFn(x1, y1, x1, y0, z0, z1), y1 - y0, z1 - z0, mat, LR(SHADE_R, SHADE_L), rnd);
   if (opt.top) poly(c, [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], opt.top, 'rgba(30,20,10,.4)', 0.6);
 }
 // einfacher Quader ohne Struktur
 function box(c, x0, y0, x1, y1, z0, z1, col, opt) {
   opt = opt || {};
   const ol = opt.outline || 'rgba(0,0,0,.35)';
-  poly(c, [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 0.86), ol, 0.6);
-  poly(c, [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, 0.66), ol, 0.6);
+  poly(c, [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, LR(0.86, 0.66)), ol, 0.6);
+  poly(c, [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, LR(0.66, 0.86)), ol, 0.6);
   if (!opt.noTop) poly(c, [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], opt.top || shade(col, 1.1), ol, 0.6);
 }
 // Schindeln auf einer Dachfläche A-B (Traufe) bis D-C (First)
@@ -3135,21 +3142,21 @@ function gableRoof(c, x0, y0, x1, y1, z, h, col, alongX, gableMat) {
   gableMat = gableMat || PLASTER;
   if (alongX) {
     const ym = (y0 + y1) / 2, cols = Math.round((x1 - x0) * 6);
-    roofPlane(c, P(x1 + o, y0 - o, z), P(x0 - o, y0 - o, z), P(x0 - o, ym, z + h), P(x1 + o, ym, z + h), col, 1.18, rows, cols);
-    poly(c, [P(x1, y0, z), P(x1, y1, z), P(x1, ym, z + h)], shade(gableMat, SHADE_R), 'rgba(30,20,10,.45)', 0.7);
+    roofPlane(c, P(x1 + o, y0 - o, z), P(x0 - o, y0 - o, z), P(x0 - o, ym, z + h), P(x1 + o, ym, z + h), col, LR(1.18, 1.15), rows, cols);
+    poly(c, [P(x1, y0, z), P(x1, y1, z), P(x1, ym, z + h)], shade(gableMat, LR(SHADE_R, SHADE_L)), 'rgba(30,20,10,.45)', 0.7);
     c.strokeStyle = shade(TIMBER, 0.8); c.lineWidth = 1.2; c.beginPath(); const a = P(x1, ym, z), b = P(x1, ym, z + h * 0.92), l0 = P(x1, y0 + (ym - y0) * 0.45, z + h * 0.45), l1 = P(x1, y1 - (y1 - ym) * 0.45, z + h * 0.45);
     c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.moveTo(l0[0], l0[1]); c.lineTo(l1[0], l1[1]); c.stroke();
-    const front = () => roofPlane(c, P(x0 - o, y1 + o, z), P(x1 + o, y1 + o, z), P(x1 + o, ym, z + h), P(x0 - o, ym, z + h), col, 0.95, rows, cols);
+    const front = () => roofPlane(c, P(x0 - o, y1 + o, z), P(x1 + o, y1 + o, z), P(x1 + o, ym, z + h), P(x0 - o, ym, z + h), col, LR(0.95, 0.74), rows, cols);
     front();
     ridge(c, P(x0 - o, ym, z + h), P(x1 + o, ym, z + h));
     return front;
   }
   const xm = (x0 + x1) / 2, cols = Math.round((y1 - y0) * 6);
-  roofPlane(c, P(x0 - o, y0 - o, z), P(x0 - o, y1 + o, z), P(xm, y1 + o, z + h), P(xm, y0 - o, z + h), col, 1.15, rows, cols);
-  poly(c, [P(x0, y1, z), P(x1, y1, z), P(xm, y1, z + h)], shade(gableMat, SHADE_L), 'rgba(30,20,10,.45)', 0.7);
+  roofPlane(c, P(x0 - o, y0 - o, z), P(x0 - o, y1 + o, z), P(xm, y1 + o, z + h), P(xm, y0 - o, z + h), col, LR(1.15, 1.18), rows, cols);
+  poly(c, [P(x0, y1, z), P(x1, y1, z), P(xm, y1, z + h)], shade(gableMat, LR(SHADE_L, SHADE_R)), 'rgba(30,20,10,.45)', 0.7);
   c.strokeStyle = shade(TIMBER, 0.9); c.lineWidth = 1.2; c.beginPath(); const a = P(xm, y1, z), b = P(xm, y1, z + h * 0.92);
   c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
-  const front = () => roofPlane(c, P(x1 + o, y1 + o, z), P(x1 + o, y0 - o, z), P(xm, y0 - o, z + h), P(xm, y1 + o, z + h), col, 0.74, rows, cols);
+  const front = () => roofPlane(c, P(x1 + o, y1 + o, z), P(x1 + o, y0 - o, z), P(xm, y0 - o, z + h), P(xm, y1 + o, z + h), col, LR(0.74, 0.95), rows, cols);
   front();
   ridge(c, P(xm, y0 - o, z + h), P(xm, y1 + o, z + h));
   return front;
@@ -3158,8 +3165,8 @@ function ridge(c, a, b) { c.strokeStyle = 'rgba(25,15,8,.7)'; c.lineWidth = 2.2;
 function pyramidRoof(c, x0, y0, x1, y1, z, h, col) {
   const a = P((x0 + x1) / 2, (y0 + y1) / 2, z + h), rows = Math.max(3, Math.round(h / 3.4)), cols = Math.round((x1 - x0) * 6);
   const tri = (p, q, k) => roofPlane(c, p, q, a, a, col, k, rows, cols);
-  tri(P(x1, y0, z), P(x0, y0, z), 1.2); tri(P(x0, y0, z), P(x0, y1, z), 1.08);
-  tri(P(x0, y1, z), P(x1, y1, z), 0.95); tri(P(x1, y1, z), P(x1, y0, z), 0.72);
+  tri(P(x1, y0, z), P(x0, y0, z), LR(1.2, 1.08)); tri(P(x0, y0, z), P(x0, y1, z), LR(1.08, 1.2));
+  tri(P(x0, y1, z), P(x1, y1, z), LR(0.95, 0.72)); tri(P(x1, y1, z), P(x1, y0, z), LR(0.72, 0.95));
   c.fillStyle = '#3a2a19'; c.beginPath(); c.arc(a[0], a[1], 1.6, 0, Math.PI * 2); c.fill();
 }
 function flag(c, x, y, z, h, col) {
@@ -3595,15 +3602,19 @@ function drawMillSails(c, hub, sc, ang) {
 }
 // Sprite-Cache
 const SPRITES = {};
-function buildingSprite(type, owner, icon) {
-  const key = type + owner + (icon ? 'i' : '');
+// rot 1 = gedreht: Sprite wird an der senkrechten Achse gespiegelt (entspricht x/y-Tausch der quadratischen Grundfläche)
+function buildingSprite(type, owner, icon, rot) {
+  rot = rot && !icon && canRotate(type) ? 1 : 0;
+  const key = type + owner + (icon ? 'i' : '') + (rot ? 'r' : '');
   if (SPRITES[key]) return SPRITES[key];
   const d = BUILDINGS[type]; const top = Math.max(120, (BLD_HEIGHT[type] || 0) + 44);
   const wpx = (d.w + d.h) * HALF_W, hpx = (d.w + d.h) * HALF_H + top;
   const cv = document.createElement('canvas'); cv.width = Math.ceil(wpx * SPR_S) + 8; cv.height = Math.ceil(hpx * SPR_S) + 4;
   const c = cv.getContext('2d');
   c.scale(SPR_S, SPR_S); c.translate(d.h * HALF_W + 2, top + 1);
-  drawBuildingShape(c, type, owner, d.w, d.h, { sails: icon });
+  if (rot) c.scale(-1, 1);
+  SPR_MIR = !!rot;
+  try { drawBuildingShape(c, type, owner, d.w, d.h, { sails: icon }); } finally { SPR_MIR = false; }
   const spr = { cv, ox: d.h * HALF_W + 2, oy: top + 1, w: cv.width / SPR_S, h: cv.height / SPR_S };
   SPRITES[key] = spr;
   return spr;
@@ -4491,7 +4502,7 @@ function drawBuildingAt(b, s, z) {
     drawSprite(wallSprite(b.type, b.owner, wallMask(b)), s.x, s.y, b.built ? undefined : 0.45 + 0.55 * b.progress);
     return;
   }
-  const spr = buildingSprite(b.type, b.owner);
+  const spr = buildingSprite(b.type, b.owner, false, b.rot);
   if (b.built || d.farm) {
     drawSprite(spr, s.x, s.y, b.built ? undefined : 0.35 + 0.65 * b.progress);
     if (b.built) buildingLife(b, z);
@@ -4514,10 +4525,12 @@ function drawBuildingAt(b, s, z) {
 // Animierte Details: Mühlenflügel, Schornsteinrauch, Brand bei schwerem Schaden
 function buildingLife(b, z) {
   const t = performance.now() / 1000;
-  if (b.type === 'mill') { const h = w2s(b.tx + 1.62, b.ty + 1.0, 30); drawMillSails(ctx, [h.x, h.y], z, t * 0.9 + b.id); }
+  // gedrehte Gebäude: lokale x/y vertauscht
+  const at = (x, y, zz) => b.rot ? w2s(b.tx + y, b.ty + x, zz) : w2s(b.tx + x, b.ty + y, zz);
+  if (b.type === 'mill') { const h = at(1.62, 1.0, 30); drawMillSails(ctx, [h.x, h.y], z, t * 0.9 + b.id); }
   const ch = CHIMNEYS[b.type];
   if (ch && z > 0.6) {
-    const c0 = w2s(b.tx + ch[0], b.ty + ch[1], ch[2] + 4);
+    const c0 = at(ch[0], ch[1], ch[2] + 4);
     for (let k = 0; k < 4; k++) {
       const f = (t * 0.32 + k / 4 + b.id * 0.137) % 1;
       ctx.fillStyle = 'rgba(228,226,220,' + (0.38 * (1 - f)).toFixed(3) + ')';
@@ -4616,8 +4629,13 @@ function drawPlacementPreview() {
     const s = w2s(t.x, t.y);
     ctx.globalAlpha = 0.6;
     if (d.wall) drawSprite(wallSprite(pl.type, G.human, wallMask({ type: pl.type, owner: G.human, tx: t.x, ty: t.y })), s.x, s.y);
-    else drawSprite(buildingSprite(pl.type, G.human), s.x, s.y);
+    else drawSprite(buildingSprite(pl.type, G.human, false, pl.rot), s.x, s.y);
     ctx.globalAlpha = 1;
+  }
+  if (canRotate(pl.type) && !touchRecent() && tiles.length) {
+    const s = w2s(pl.tx + d.w / 2, pl.ty + d.h);
+    ctx.font = '12px Georgia, serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.fillStyle = '#ffe2a6';
+    ctx.strokeText('R = drehen', s.x, s.y + 16); ctx.fillText('R = drehen', s.x, s.y + 16); ctx.textAlign = 'left';
   }
 }
 
@@ -4677,7 +4695,7 @@ function minimapToWorld(mx, my) {
 /* ============================ 10. UI ============================ */
 const $ = id => document.getElementById(id);
 const UI = {
-  sel: [], selSet: new Set(), placing: null, cmdMode: null, alerts: [], lastSelKey: '', lastInfoT: 0, hover: null,
+  sel: [], selSet: new Set(), placing: null, rot: {}, cmdMode: null, alerts: [], lastSelKey: '', lastInfoT: 0, hover: null,
   buildMenu: null, // null | 'eco' | 'mil' | 'def'
 };
 function setSelection(list) {
@@ -4968,12 +4986,17 @@ function updateTopBar() {
 function startPlacing(type) {
   const p = G.players[G.human];
   if (!canAfford(p, BUILDINGS[type].cost)) { notifyLocal('Nicht genug Ressourcen für ' + BUILDINGS[type].name + '.'); return; }
-  UI.placing = { type, tx: 0, ty: 0, lineStart: null };
+  UI.placing = { type, tx: 0, ty: 0, lineStart: null, rot: canRotate(type) ? (UI.rot[type] || 0) : 0 };
   if (touchRecent()) { INPUT.mx = VW / 2; INPUT.my = (UI_TOP + VH - UI_BOT) / 2; }
   updatePlacingPos();
   refreshCommands();
 }
 function cancelPlacing() { UI.placing = null; }
+// Ausrichtung umschalten; die letzte Drehung je Gebäudetyp bleibt für den nächsten Bau gemerkt
+function rotatePlacing() {
+  const pl = UI.placing; if (!pl || !canRotate(pl.type)) return;
+  pl.rot = pl.rot ? 0 : 1; UI.rot[pl.type] = pl.rot;
+}
 function updatePlacingPos() {
   const pl = UI.placing; if (!pl) return;
   const w = s2w(INPUT.mx, INPUT.my); const d = BUILDINGS[pl.type];
@@ -4986,7 +5009,9 @@ function commitPlacing(shift) {
   const tiles = d.line && pl.lineStart ? wallLine(pl.lineStart.x, pl.lineStart.y, pl.tx, pl.ty) : [{ x: pl.tx, y: pl.ty }];
   const vills = selOwnUnits().filter(u => u.type === 'villager');
   if (!vills.length) { UI.placing = null; refreshPanel(true); return; }
-  issue({ c: 'build', ids: vills.map(u => u.id), type: pl.type, tiles: tiles.map(t => [t.x, t.y]) });
+  const cmd = { c: 'build', ids: vills.map(u => u.id), type: pl.type, tiles: tiles.map(t => [t.x, t.y]) };
+  if (pl.rot) cmd.rot = 1;
+  issue(cmd);
   const ok = tiles.find(t => canPlace(pl.type, t.x, t.y, G.human));
   if (ok) addEffect('order', ok.x + d.w / 2, ok.y + d.h / 2, 'move');
   if (shift && canAfford(p, d.cost)) { pl.lineStart = null; }
@@ -5258,6 +5283,7 @@ function setupInput() {
     if (paused) return;
     INPUT.keys.add(k);
     if (k === 'escape') { escapeAction(); return; }
+    if (k === 'r' && UI.placing && canRotate(UI.placing.type) && !e.ctrlKey && !e.metaKey) { rotatePlacing(); return; }
     const digit = e.code && e.code.startsWith('Digit') ? +e.code.slice(5) : (k >= '0' && k <= '9' ? +k : -1);
     if (digit >= 1 && digit <= 9) {
       e.preventDefault();
@@ -6076,10 +6102,12 @@ function setupTouch() {
   on('tbArmy', selectArmy);
   on('btnPlaceOk', () => commitPlacing(false));
   on('btnPlaceNo', () => { cancelPlacing(); refreshCommands(); });
+  on('btnPlaceRot', rotatePlacing);
 }
 // pro Bild: Bauleiste ein-/ausblenden, Zähler der untätigen Dorfbewohner, Auflösung anpassen
 function touchFrame(dt) {
   $('placeBar').classList.toggle('hidden', !UI.placing || paused || G.over);
+  $('btnPlaceRot').classList.toggle('hidden', !UI.placing || !canRotate(UI.placing.type));
   const idle = G.units.reduce((n, u) => n + (!u.dead && u.owner === G.human && u.type === 'villager' && !u.order ? 1 : 0), 0);
   if (idle !== TOUCH.idleN) { TOUCH.idleN = idle; $('tbIdle').innerHTML = 'Untätig' + (idle ? ' <b>' + idle + '</b>' : ''); }
   perfTick(dt);

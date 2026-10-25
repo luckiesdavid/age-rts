@@ -2,7 +2,7 @@
 
 **▶ [Jetzt im Browser spielen](https://luckiesdavid.github.io/age-rts/)** – ohne Download, einfach den Link öffnen.
 
-Ein isometrisches Echtzeit-Strategiespiel für den Browser: 1 gegen 1 gegen eine KI oder online gegen einen anderen Menschen. Baue eine Siedlung auf, sammle Ressourcen, sichere deine Basis mit Mauern und Türmen und zerstöre die gegnerische Siedlung.
+Ein isometrisches Echtzeit-Strategiespiel für den Browser: 1 gegen 1 gegen eine KI oder online gegen einen anderen Menschen. Das Spielprinzip lehnt sich an Age of Empires IV an: Baue eine Wirtschaft mit vier Rohstoffen auf, steige mit Wahrzeichen durch vier Zeitalter auf, erforsche Verbesserungen, stelle eine Armee mit den richtigen Kontern auf und zerstöre die Wahrzeichen des Gegners.
 
 Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Grafiken oder Build-Schritte (nur der Mehrspielermodus lädt die Netzwerkbibliothek PeerJS nach); alle Gebäude, Einheiten und das Gelände werden prozedural auf dem Canvas gezeichnet.
 
@@ -39,7 +39,7 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 - Test der Lockstep-Logik ohne Browser: `node tests/lockstep-sim.mjs [Minuten] [Seed] [Latenz in Ticks]`.
 - Test für Abbruch, Nachliefern und Fortsetzen ohne Browser: `node tests/reconnect-sim.mjs [Seed]`.
 
-**Ziel:** Zerstöre alle gegnerischen Gebäude (Mauern zählen nicht) – oder sein Dorfzentrum und alle seine Einheiten. Umgekehrt verlierst du.
+**Ziel (Wahrzeichen-Sieg):** Zerstöre alle Wahrzeichen des Gegners. Sein erstes Dorfzentrum zählt als Wahrzeichen, dazu kommen alle Wahrzeichen, die er für den Aufstieg in neue Zeitalter gebaut hat. Wer keine fertigen Gebäude außer Mauern mehr hat, verliert ebenfalls. Umgekehrt gilt dasselbe für dich.
 
 ## Auf dem Handy
 
@@ -84,11 +84,34 @@ Oben links gibt es Knöpfe für **Abwählen** (wie Esc), **Mehrfach** (Tippen f�
 | Leertaste / P | Pause |
 | F5 oder Cmd/Ctrl + S | Speichern-Dialog |
 
-**Bauen:** Dorfbewohner auswählen, Menü **Wirtschaft (Q)**, **Militär (E)** oder **Verteidigung (R)** öffnen, Gebäude wählen und platzieren. Die Vorschau zeigt grün (möglich) oder rot (blockiert). Mit Shift bleibst du im Platzierungsmodus. Mehrere Dorfbewohner bauen schneller. Unfertige oder beschädigte eigene Gebäude werden per Rechtsklick weitergebaut bzw. repariert.
+**Bauen:** Dorfbewohner auswählen, Menü **Wirtschaft (Q)**, **Militär (E)**, **Verteidigung (R)** oder **Wahrzeichen (F)** öffnen, Gebäude wählen und platzieren. Die Vorschau zeigt grün (möglich) oder rot (blockiert). Mit Shift bleibst du im Platzierungsmodus. Mehrere Dorfbewohner bauen schneller. Unfertige oder beschädigte eigene Gebäude werden per Rechtsklick weitergebaut bzw. repariert.
 
 **Mauern:** Palisade oder Steinmauer wählen und **klicken und ziehen**: Die Mauer wird Kachel für Kachel entlang der Linie gesetzt (Kosten pro Segment). Ein Tor kann auf ein bestehendes eigenes Mauerstück gleichen Materials gesetzt werden. Eigene Einheiten gehen durch Tore, gegnerische nicht.
 
-**Produktion:** Gebäude anwählen und Einheit anklicken (Shift + Klick = 5 Stück). Die Warteschlange erscheint im Infobereich; ein Klick auf einen Eintrag bricht ihn ab und erstattet die Kosten.
+**Produktion und Forschung:** Gebäude anwählen und Einheit oder Technologie anklicken (Shift + Klick = 5 Einheiten). Einheiten und Forschung teilen sich die Warteschlange des Gebäudes; sie erscheint im Infobereich, ein Klick auf einen Eintrag bricht ihn ab und erstattet die Kosten. Gesperrte Einheiten und Gebäude sind ausgegraut, der Tooltip nennt das nötige Zeitalter.
+
+## Zeitalter und Wahrzeichen
+
+Wie in Age of Empires IV gibt es vier Zeitalter. Für den Aufstieg baust du mit Dorfbewohnern eines von zwei **Wahrzeichen** (Menü **Wahrzeichen**). Jedes Wahrzeichen hat einen eigenen Bonus, der gilt, solange es steht. Das zweite Wahrzeichen eines Zeitalters kannst du später zusätzlich bauen. Es kann immer nur ein Wahrzeichen gleichzeitig im Bau sein.
+
+| Zeitalter | Kosten | Wahrzeichen (Bonus) | Neu verfügbar |
+|---|---|---|---|
+| I Dunkles Zeitalter | – | – (Start) | Dorfbewohner, Späher, Speerkämpfer, Kaserne, Wirtschaftsgebäude, Palisaden |
+| II Feudalzeit | 400 Nahrung, 200 Gold | **Marktkreuz** (alle Dorfbewohner sammeln 10 % schneller) oder **Kriegsschule** (Militär 25 % schneller ausgebildet) | Bogenschütze, Waffenknecht, Reiter, Ramme, Schießstand, Stall, Werkstatt, Schmiede, Markt, Turm, Steinmauer, weiteres Dorfzentrum |
+| III Burgzeit | 1200 Nahrung, 600 Gold | **Schatzkammer** (+1,5 Gold pro Sekunde, Lager für Gold/Stein) oder **Wehrburg** (sehr robust, schießt 4 Pfeile) | Armbrustschütze, Ritter, Katapult, Tribok, Bergfried |
+| IV Imperialzeit | 2400 Nahrung, 1200 Gold | **Dom** (heilt eigene Einheiten in der Nähe) oder **Kriegsakademie** (Militär +15 % Schaden) | Handkanonier, dritte Stufe der Schmiede |
+
+## Technologien
+
+| Gebäude | Technologie | Wirkung |
+|---|---|---|
+| Dorfzentrum | Schubkarre (II), Wollkleidung (II) | +5 Traglast und +15 % Tempo bzw. +25 LP für Dorfbewohner |
+| Mühle | Bewässerung (II), Fruchtwechsel (III) | je +15 % Nahrung |
+| Holzlager | Doppelaxt (II), Bügelsäge (III) | je +15 % Holz |
+| Bergbaulager | Spitzhacke (II), Schachtbau (III) | je +15 % Gold und Stein |
+| Schmiede | Geschmiedete Klingen, Pfeilspitzen, Kettenpanzer, Lederpolster (je Stufe I–III ab Zeitalter II–IV) | +1 Nahkampf- bzw. Fernkampfangriff, −1 Schaden durch Nahkampf bzw. Fernkampf (Militär) |
+
+**Markt:** Kauft und verkauft Nahrung, Holz und Stein in 100er-Schritten gegen Gold. Kaufen kostet mehr, als Verkaufen bringt, und jeder Handel verschiebt den Preis.
 
 ## Ressourcen
 
@@ -111,26 +134,39 @@ Das Bevölkerungslimit steigt mit jedem Haus um 10 (Dorfzentrum: 10, Maximum 200
 | Holzlager | 50 Holz | Holzlager |
 | Bergbaulager | 50 Holz | Gold- und Steinlager |
 | Bauernhof | 75 Holz | unerschöpfliche Nahrung |
-| Kaserne | 150 Holz | Speerkämpfer |
-| Schießstand | 150 Holz | Bogenschützen |
-| Stall | 150 Holz | Reiter |
-| Belagerungswerkstatt | 200 Holz, 50 Gold | Ramme, Katapult |
-| Turm | 75 Holz, 125 Stein | schießt automatisch Pfeile (Reichweite 8) |
+| Kaserne | 150 Holz | Speerkämpfer, Waffenknechte |
+| Schießstand (II) | 150 Holz | Bogen-, Armbrustschützen, Handkanoniere |
+| Stall (II) | 150 Holz | Reiter, Ritter |
+| Belagerungswerkstatt (II) | 200 Holz, 50 Gold | Ramme, Katapult, Tribok |
+| Schmiede (II) | 150 Holz | Angriffs- und Rüstungsverbesserungen |
+| Markt (II) | 150 Holz | Rohstoffhandel |
+| Turm (II) | 75 Holz, 125 Stein | schießt automatisch Pfeile (Reichweite 8) |
+| Bergfried (III) | 150 Holz, 650 Stein | Burg, schießt 3 Pfeile (Reichweite 9), sehr robust |
 | Palisade | 3 Holz je Segment | billige, schwache Holzmauer |
 | Palisadentor | 25 Holz | Tor in der Palisade |
-| Steinmauer | 6 Stein je Segment | teure, starke Mauer |
-| Steintor | 30 Stein | Tor in der Steinmauer |
+| Steinmauer (II) | 6 Stein je Segment | teure, starke Mauer |
+| Steintor (II) | 30 Stein | Tor in der Steinmauer |
+
+Die römische Zahl gibt das nötige Zeitalter an. Ein zusätzliches Dorfzentrum gibt es ab der Feudalzeit.
 
 ## Einheiten
 
-| Einheit | Kosten | Stärken / Schwächen |
-|---|---|---|
-| Dorfbewohner | 50 Nahrung | sammelt, baut, repariert, jagt |
-| Speerkämpfer | 60 Nahrung, 20 Holz | Nahkampf, stark gegen Reiter |
-| Bogenschütze | 40 Nahrung, 50 Holz | Fernkampf, stark gegen Speerkämpfer, schwach gegen Reiter |
-| Reiter | 100 Nahrung, 20 Holz | schnell, stark gegen Bogenschützen und Belagerung, schwach gegen Speerkämpfer |
-| Ramme | 160 Holz, 40 Gold | sehr hoher Schaden nur gegen Gebäude, Mauern und Tore; nahezu immun gegen Pfeile, verwundbar im Nahkampf |
-| Katapult | 150 Holz, 150 Gold | Fernkampf (Reichweite 9, Mindestreichweite 3) mit Flächenschaden, gut gegen Gebäude und Mauern, schwach gegen Reiter |
+Einheiten sind wie in AoE4 **leicht** oder **schwer** gepanzert. Schwere Einheiten halten viel aus, Armbrustschützen durchschlagen ihre Rüstung.
+
+| Einheit | Zeitalter | Kosten | Stärken / Schwächen |
+|---|---|---|---|
+| Dorfbewohner | I | 50 Nahrung | sammelt, baut, repariert, jagt |
+| Späher | I | 80 Nahrung | sehr schnell, große Sichtweite, schwach im Kampf |
+| Speerkämpfer | I | 60 Nahrung, 20 Holz | leichte Infanterie, stark gegen Reiter und Ritter |
+| Waffenknecht | II | 100 Nahrung, 20 Gold | schwere Infanterie, hält Pfeilen stand, schwach gegen Armbrustschützen |
+| Bogenschütze | II | 40 Nahrung, 50 Holz | Fernkampf, stark gegen leichte Infanterie, schwach gegen Reiter |
+| Reiter | II | 100 Nahrung, 20 Holz | leichte Reiterei, stark gegen Fernkämpfer und Belagerung, schwach gegen Speerkämpfer |
+| Ramme | II | 160 Holz, 40 Gold | sehr hoher Schaden nur gegen Gebäude, Mauern und Tore; nahezu immun gegen Pfeile, verwundbar im Nahkampf |
+| Armbrustschütze | III | 80 Nahrung, 40 Gold | Fernkampf, stark gegen schwere Einheiten (Waffenknecht, Ritter) |
+| Ritter | III | 140 Nahrung, 100 Gold | schwere Reiterei, sehr stark, schwach gegen Speerkämpfer und Armbrustschützen |
+| Katapult | III | 150 Holz, 150 Gold | Fernkampf (Reichweite 9, Mindestreichweite 3) mit Flächenschaden, gut gegen Gruppen und Gebäude, schwach gegen Reiter |
+| Tribok | III | 400 Holz, 250 Gold | Reichweite 12, zerstört Gebäude und Burgen, greift keine Einheiten an |
+| Handkanonier | IV | 120 Nahrung, 120 Gold | schwerer Fernkampf mit Schießpulver, hoher Schaden |
 
 Einheiten greifen Feinde in Sichtweite automatisch an. Pfeile richten an Gebäuden und Mauern kaum Schaden an, Belagerungswaffen sind dafür gebaut.
 
@@ -140,4 +176,4 @@ Einheiten greifen Feinde in Sichtweite automatisch an. Pfeile richten an Gebäud
 - **Mittel:** normale Wirtschaft, Palisaden mit Toren, zwei Türme, Rammen gegen Befestigungen.
 - **Schwer:** etwas schnelleres Sammeln (+18 %) und kleiner Startbonus, frühere und größere Wellen, Steinmauern, drei Türme, Rammen und Katapulte.
 
-Die KI spielt nach denselben Regeln und Kosten wie du: Sie baut Häuser rechtzeitig, verteilt Dorfbewohner nach Bedarf, stellt eine gemischte Armee mit Kontern auf, verteidigt ihre Basis und bricht Mauern mit Belagerungswaffen auf oder umgeht sie.
+Die KI spielt nach denselben Regeln und Kosten wie du: Sie steigt mit Wahrzeichen in neue Zeitalter auf (Leicht bis zur Burgzeit, Mittel und Schwer bis zur Imperialzeit), erforscht Verbesserungen, handelt am Markt, baut Häuser rechtzeitig, verteilt Dorfbewohner nach Bedarf, stellt eine gemischte Armee mit Kontern auf, verteidigt ihre Basis und bricht Mauern mit Belagerungswaffen auf oder umgeht sie.

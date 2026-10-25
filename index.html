@@ -41,6 +41,9 @@ html, body {
 .ico.gold  { border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff6c2, #d1a017 70%); }
 .ico.stone { border-radius: 4px; background: radial-gradient(circle at 35% 35%, #ececec, #6f6f6f 75%); }
 .ico.pop   { border-radius: 50%; background: radial-gradient(circle at 50% 32%, #f1d3a8 32%, #3c6cc4 34%); }
+.ico.age   { border-radius: 2px 2px 8px 8px; background: linear-gradient(135deg, #f3dc8a, #b8862a 60%, #7a5418); }
+#ageBox { min-width: 0; white-space: nowrap; }
+@media (max-width: 760px), (max-height: 540px) { .ageN { display: none; } }
 #topRight { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 14px; }
 #clock { font-variant-numeric: tabular-nums; opacity: .85; flex: none; }
 .tbtn {
@@ -290,6 +293,7 @@ body.touch .touchKeys { display: block; }
   <div class="res" title="Gold"><span class="ico gold"></span><b id="rGold">0</b></div>
   <div class="res" title="Stein"><span class="ico stone"></span><b id="rStone">0</b></div>
   <div class="res" title="Bevölkerung / Limit"><span class="ico pop"></span><b id="rPop">0/0</b></div>
+  <div class="res" id="ageBox" title="Zeitalter"><span class="ico age"></span><b id="rAge">I</b></div>
   <div id="topRight">
     <span id="diffLabel"></span>
     <span id="clock">00:00</span>
@@ -476,61 +480,152 @@ const PLAYER_COLORS = [
 // Sammelraten (Einheiten pro Sekunde)
 const GATHER_RATE = { berry: 0.85, carcass: 1.15, farm: 0.7, tree: 0.78, gold: 0.72, stone: 0.68 };
 
-// Einheiten. bonus: Zusatzschaden gegen Klasse; resist: Schadensfaktor je Angriffsart
+// Zeitalter (wie in AoE4): Aufstieg durch den Bau eines von zwei Wahrzeichen, Kosten = Kosten des Wahrzeichens
+const AGES = [
+  { name: 'Dunkles Zeitalter', short: 'I' },
+  { name: 'Feudalzeit', short: 'II', cost: { food: 400, gold: 200 } },
+  { name: 'Burgzeit', short: 'III', cost: { food: 1200, gold: 600 } },
+  { name: 'Imperialzeit', short: 'IV', cost: { food: 2400, gold: 1200 } },
+];
+
+// Einheiten. bonus: Zusatzschaden gegen Klasse (cls), 'heavy'/'light' oder z. B. 'light_inf';
+// resist: Schadensfaktor je Angriffsart; heavy: schwer gepanzert; age: ab welchem Zeitalter
 const UNITS = {
   villager: { name: 'Dorfbewohner', hp: 50, speed: 1.55, atk: 4, atkType: 'melee', range: 0.55, cd: 1.5, sight: 6,
-    cost: { food: 50 }, time: 13, pop: 1, cls: 'villager', radius: 0.2, bonus: { deer: 8 },
+    cost: { food: 50 }, time: 13, pop: 1, cls: 'villager', radius: 0.2, bonus: { deer: 8 }, age: 0,
     desc: 'Sammelt Ressourcen, errichtet und repariert Gebäude.' },
+  scout: { name: 'Späher', hp: 90, speed: 3.0, atk: 3, atkType: 'melee', range: 0.6, cd: 1.6, sight: 12,
+    cost: { food: 80 }, time: 16, pop: 1, cls: 'cav', radius: 0.28, bonus: { deer: 10 }, resist: { pierce: 0.8 }, age: 0,
+    military: true, desc: 'Sehr schnell mit großer Sichtweite. Zum Erkunden, im Kampf schwach.' },
   spear: { name: 'Speerkämpfer', hp: 85, speed: 1.45, atk: 7, atkType: 'melee', range: 0.55, cd: 1.4, sight: 7,
-    cost: { food: 60, wood: 20 }, time: 12, pop: 1, cls: 'inf', radius: 0.22, bonus: { cav: 18, siege: 6 },
-    resist: { pierce: 0.85 }, military: true, desc: 'Nahkampf-Infanterie. Stark gegen Reiter.' },
+    cost: { food: 60, wood: 20 }, time: 12, pop: 1, cls: 'inf', radius: 0.22, bonus: { cav: 18, siege: 6 }, age: 0,
+    resist: { pierce: 0.85 }, military: true, desc: 'Leichte Infanterie. Stark gegen Reiter und Ritter.' },
+  maa: { name: 'Waffenknecht', hp: 150, speed: 1.25, atk: 10, atkType: 'melee', range: 0.55, cd: 1.4, sight: 7,
+    cost: { food: 100, gold: 20 }, time: 18, pop: 1, cls: 'inf', heavy: true, radius: 0.23, age: 1,
+    resist: { melee: 0.75, pierce: 0.55 }, military: true,
+    desc: 'Schwere Infanterie. Hält Pfeilen stand und schlägt leichte Einheiten. Schwach gegen Armbrustschützen.' },
   archer: { name: 'Bogenschütze', hp: 55, speed: 1.45, atk: 5, atkType: 'pierce', range: 5.5, cd: 1.6, sight: 8,
-    cost: { food: 40, wood: 50 }, time: 13, pop: 1, cls: 'ranged', radius: 0.2, bonus: { inf: 7 },
-    projectile: 'arrow', military: true, desc: 'Fernkampf. Stark gegen Speerkämpfer, schwach gegen Reiter.' },
+    cost: { food: 40, wood: 50 }, time: 13, pop: 1, cls: 'ranged', radius: 0.2, bonus: { light_inf: 7 }, age: 1,
+    projectile: 'arrow', military: true, desc: 'Fernkampf. Stark gegen leichte Infanterie, schwach gegen Reiter und schwere Einheiten.' },
+  crossbow: { name: 'Armbrustschütze', short: 'Armbrust', hp: 70, speed: 1.4, atk: 7, atkType: 'pierce', range: 5, cd: 2.1, sight: 8,
+    cost: { food: 80, gold: 40 }, time: 18, pop: 1, cls: 'ranged', radius: 0.2, bonus: { heavy: 11 }, age: 2,
+    projectile: 'arrow', military: true, desc: 'Fernkampf. Durchschlägt Rüstungen: stark gegen Waffenknechte und Ritter.' },
+  handcannon: { name: 'Handkanonier', short: 'Kanonier', hp: 130, speed: 1.3, atk: 18, atkType: 'pierce', range: 4.5, cd: 2.8, sight: 8,
+    cost: { food: 120, gold: 120 }, time: 22, pop: 1, cls: 'ranged', heavy: true, radius: 0.21, bonus: { heavy: 6 }, age: 3,
+    resist: { pierce: 0.7 }, projectile: 'bullet', military: true, desc: 'Schwerer Fernkampf mit Schießpulver. Hoher Schaden gegen alles am Boden, teuer.' },
   horseman: { name: 'Reiter', hp: 125, speed: 2.6, atk: 9, atkType: 'melee', range: 0.6, cd: 1.5, sight: 8,
-    cost: { food: 100, wood: 20 }, time: 16, pop: 1, cls: 'cav', radius: 0.3, bonus: { ranged: 12, siege: 30, villager: 2 },
-    resist: { pierce: 0.75 }, military: true, desc: 'Schnell. Stark gegen Bogenschützen und Belagerungswaffen, schwach gegen Speerkämpfer.' },
+    cost: { food: 100, wood: 20 }, time: 16, pop: 1, cls: 'cav', radius: 0.3, bonus: { ranged: 12, siege: 30, villager: 2 }, age: 1,
+    resist: { pierce: 0.75 }, military: true, desc: 'Leichte Reiterei. Stark gegen Fernkämpfer und Belagerungswaffen, schwach gegen Speerkämpfer.' },
+  knight: { name: 'Ritter', hp: 230, speed: 2.15, atk: 15, atkType: 'melee', range: 0.6, cd: 1.5, sight: 8,
+    cost: { food: 140, gold: 100 }, time: 26, pop: 1, cls: 'cav', heavy: true, radius: 0.31, age: 2,
+    resist: { melee: 0.75, pierce: 0.6 }, military: true, desc: 'Schwere Reiterei. Sehr stark, aber schwach gegen Speerkämpfer und Armbrustschützen.' },
   ram: { name: 'Ramme', hp: 320, speed: 1.0, atk: 0, atkBld: 90, atkType: 'siege', range: 0.6, cd: 2.2, sight: 5,
-    cost: { wood: 160, gold: 40 }, time: 24, pop: 2, cls: 'siege', radius: 0.38, bldOnly: true,
+    cost: { wood: 160, gold: 40 }, time: 24, pop: 2, cls: 'siege', radius: 0.38, bldOnly: true, age: 1,
     resist: { pierce: 0.04, melee: 1.15 }, military: true, siege: true,
     desc: 'Greift nur Gebäude, Mauern und Tore an – mit hohem Schaden. Fast immun gegen Pfeile, verwundbar im Nahkampf.' },
   catapult: { name: 'Katapult', hp: 130, speed: 0.85, atk: 14, atkBld: 55, atkType: 'siege', range: 9, minRange: 3, cd: 5.5,
-    sight: 10, cost: { wood: 150, gold: 150 }, time: 30, pop: 3, cls: 'siege', radius: 0.36, splash: 1.3,
+    sight: 10, cost: { wood: 150, gold: 150 }, time: 30, pop: 3, cls: 'siege', radius: 0.36, splash: 1.3, age: 2,
     resist: { pierce: 0.5, melee: 1.25 }, projectile: 'stone', military: true, siege: true,
-    desc: 'Fernkampf mit Flächenschaden. Gut gegen Gebäude und Mauern. Mindestreichweite, schwach gegen Reiter.' },
+    desc: 'Fernkampf mit Flächenschaden. Gut gegen Gruppen, Gebäude und Mauern. Mindestreichweite, schwach gegen Reiter.' },
+  trebuchet: { name: 'Tribok', hp: 200, speed: 0.6, atk: 0, atkBld: 200, atkType: 'siege', range: 12, minRange: 4, cd: 9,
+    sight: 13, cost: { wood: 400, gold: 250 }, time: 35, pop: 4, cls: 'siege', radius: 0.42, splash: 1.0, bldOnly: true, age: 2,
+    resist: { pierce: 0.4, melee: 1.2 }, projectile: 'stone', military: true, siege: true,
+    desc: 'Riesige Wurfmaschine mit sehr großer Reichweite. Zerstört Gebäude, Burgen und Mauern, greift keine Einheiten an.' },
   deer: { name: 'Hirsch', hp: 20, speed: 1.3, atk: 0, atkType: 'melee', range: 0, cd: 9, sight: 4, cost: {}, time: 0, pop: 0,
     cls: 'deer', radius: 0.25, gaia: true, desc: 'Wild. Dorfbewohner können es jagen (Nahrung).' },
 };
+// Bonusschaden je Paar (Angreifer, Ziel) einmal vorberechnen, damit der Kampf keine Suche braucht
+for (const a in UNITS) {
+  const d = UNITS[a]; d.bonusVs = {};
+  for (const b in UNITS) {
+    const t = UNITS[b], w = t.heavy ? 'heavy' : 'light';
+    let s = 0;
+    for (const k in d.bonus || {}) if (k === t.cls || k === w || k === w + '_' + t.cls || k === b) s += d.bonus[k];
+    if (s) d.bonusVs[b] = s;
+  }
+}
 
 const BLD_RES_DEF = { melee: 0.12, pierce: 0.04, siege: 1 };
+const LM_RES = { melee: 0.08, pierce: 0.02, siege: 0.9 };
 const BUILDINGS = {
-  tc: { name: 'Dorfzentrum', w: 4, h: 4, hp: 2400, cost: { wood: 350, stone: 250 }, time: 90, pop: 10,
-    drop: ['food', 'wood', 'gold', 'stone'], trains: ['villager'], attack: { dmg: 8, range: 7, cd: 1.5 },
-    desc: 'Bildet Dorfbewohner aus, Lager für alle Ressourcen, +10 Bevölkerung. Schießt Pfeile.' },
-  house: { name: 'Haus', w: 2, h: 2, hp: 550, cost: { wood: 50 }, time: 16, pop: 10, desc: '+10 Bevölkerungslimit.' },
-  lumber: { name: 'Holzlager', w: 2, h: 2, hp: 700, cost: { wood: 50 }, time: 16, drop: ['wood'], desc: 'Abgabestelle für Holz.' },
-  mining: { name: 'Bergbaulager', w: 2, h: 2, hp: 700, cost: { wood: 50 }, time: 16, drop: ['gold', 'stone'], desc: 'Abgabestelle für Gold und Stein.' },
-  mill: { name: 'Mühle', w: 2, h: 2, hp: 700, cost: { wood: 50 }, time: 16, drop: ['food'], desc: 'Abgabestelle für Nahrung.' },
-  farm: { name: 'Bauernhof', w: 3, h: 3, hp: 350, cost: { wood: 75 }, time: 14, walkable: true, farm: true,
+  tc: { name: 'Dorfzentrum', w: 4, h: 4, hp: 2400, cost: { wood: 350, stone: 250 }, time: 90, pop: 10, age: 1,
+    drop: ['food', 'wood', 'gold', 'stone'], trains: ['villager', 'scout'], techs: ['wheelbarrow', 'textiles'], attack: { dmg: 8, range: 7, cd: 1.5, n: 2 },
+    desc: 'Bildet Dorfbewohner und Späher aus, Lager für alle Ressourcen, +10 Bevölkerung. Schießt Pfeile. Das erste Dorfzentrum zählt als Wahrzeichen.' },
+  house: { name: 'Haus', w: 2, h: 2, hp: 550, cost: { wood: 50 }, time: 16, pop: 10, age: 0, desc: '+10 Bevölkerungslimit.' },
+  lumber: { name: 'Holzlager', w: 2, h: 2, hp: 700, cost: { wood: 50 }, time: 16, drop: ['wood'], techs: ['wood1', 'wood2'], age: 0, desc: 'Abgabestelle für Holz. Erforscht Holz-Verbesserungen.' },
+  mining: { name: 'Bergbaulager', w: 2, h: 2, hp: 700, cost: { wood: 50 }, time: 16, drop: ['gold', 'stone'], techs: ['mine1', 'mine2'], age: 0, desc: 'Abgabestelle für Gold und Stein. Erforscht Bergbau-Verbesserungen.' },
+  mill: { name: 'Mühle', w: 2, h: 2, hp: 700, cost: { wood: 50 }, time: 16, drop: ['food'], techs: ['farm1', 'farm2'], age: 0, desc: 'Abgabestelle für Nahrung. Erforscht Landwirtschafts-Verbesserungen.' },
+  farm: { name: 'Bauernhof', w: 3, h: 3, hp: 350, cost: { wood: 75 }, time: 14, walkable: true, farm: true, age: 0,
     desc: 'Unerschöpfliche Nahrungsquelle für einen Dorfbewohner.' },
-  barracks: { name: 'Kaserne', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 30, trains: ['spear'], desc: 'Bildet Speerkämpfer aus.' },
-  range: { name: 'Schießstand', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 30, trains: ['archer'], desc: 'Bildet Bogenschützen aus.' },
-  stable: { name: 'Stall', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 30, trains: ['horseman'], desc: 'Bildet Reiter aus.' },
-  siege: { name: 'Belagerungswerkstatt', short: 'Werkstatt', w: 3, h: 3, hp: 1500, cost: { wood: 200, gold: 50 }, time: 35, trains: ['ram', 'catapult'],
-    desc: 'Baut Rammen und Katapulte.' },
-  tower: { name: 'Turm', w: 2, h: 2, hp: 1400, cost: { wood: 75, stone: 125 }, time: 35, attack: { dmg: 10, range: 8, cd: 1.5 },
+  barracks: { name: 'Kaserne', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 30, trains: ['spear', 'maa'], age: 0, desc: 'Bildet Speerkämpfer und Waffenknechte aus.' },
+  range: { name: 'Schießstand', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 30, trains: ['archer', 'crossbow', 'handcannon'], age: 1, desc: 'Bildet Bogen-, Armbrustschützen und Handkanoniere aus.' },
+  stable: { name: 'Stall', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 30, trains: ['horseman', 'knight'], age: 1, desc: 'Bildet Reiter und Ritter aus.' },
+  siege: { name: 'Belagerungswerkstatt', short: 'Werkstatt', w: 3, h: 3, hp: 1500, cost: { wood: 200, gold: 50 }, time: 35, trains: ['ram', 'catapult', 'trebuchet'], age: 1,
+    desc: 'Baut Rammen, Katapulte und Triboks.' },
+  blacksmith: { name: 'Schmiede', w: 2, h: 2, hp: 1200, cost: { wood: 150 }, time: 30, age: 1,
+    techs: ['melee1', 'ranged1', 'marmor1', 'parmor1', 'melee2', 'ranged2', 'marmor2', 'parmor2', 'melee3', 'ranged3', 'marmor3', 'parmor3'],
+    desc: 'Erforscht Angriffs- und Rüstungsverbesserungen für das Militär.' },
+  market: { name: 'Markt', w: 3, h: 3, hp: 1500, cost: { wood: 150 }, time: 35, age: 1, market: true,
+    desc: 'Tauscht Nahrung, Holz und Stein gegen Gold. Jeder Handel verschiebt den Preis.' },
+  tower: { name: 'Turm', w: 2, h: 2, hp: 1400, cost: { wood: 75, stone: 125 }, time: 35, attack: { dmg: 10, range: 8, cd: 1.5 }, age: 1,
     resist: { melee: 0.08, pierce: 0.02, siege: 1 }, desc: 'Schießt automatisch Pfeile auf Feinde in Reichweite.' },
-  palisade: { name: 'Palisade', w: 1, h: 1, hp: 300, cost: { wood: 3 }, time: 3, wall: true, line: true,
+  keep: { name: 'Bergfried', w: 3, h: 3, hp: 4500, cost: { wood: 150, stone: 650 }, time: 110, attack: { dmg: 11, range: 9, cd: 1.3, n: 3 }, age: 2,
+    resist: { melee: 0.05, pierce: 0.015, siege: 0.85 }, desc: 'Mächtige Burg. Schießt drei Pfeile gleichzeitig und hält lange stand.' },
+  palisade: { name: 'Palisade', w: 1, h: 1, hp: 300, cost: { wood: 3 }, time: 3, wall: true, line: true, age: 0,
     resist: { melee: 0.3, pierce: 0.02, siege: 1.2 }, desc: 'Billige Holzmauer. Ziehen, um eine Linie zu bauen. Kosten pro Segment.' },
-  pgate: { name: 'Palisadentor', w: 1, h: 1, hp: 450, cost: { wood: 25 }, time: 8, wall: true, gate: true,
+  pgate: { name: 'Palisadentor', w: 1, h: 1, hp: 450, cost: { wood: 25 }, time: 8, wall: true, gate: true, age: 0,
     resist: { melee: 0.3, pierce: 0.02, siege: 1.2 }, desc: 'Eigene Einheiten können hindurch, Feinde nicht. Kann auf eigene Palisade gesetzt werden.' },
-  wall: { name: 'Steinmauer', w: 1, h: 1, hp: 1600, cost: { stone: 6 }, time: 6, wall: true, line: true, stone: true,
+  wall: { name: 'Steinmauer', w: 1, h: 1, hp: 1600, cost: { stone: 6 }, time: 6, wall: true, line: true, stone: true, age: 1,
     resist: { melee: 0.05, pierce: 0, siege: 1 }, desc: 'Starke Mauer. Ziehen, um eine Linie zu bauen. Kosten pro Segment.' },
-  sgate: { name: 'Steintor', w: 1, h: 1, hp: 2000, cost: { stone: 30 }, time: 14, wall: true, gate: true, stone: true,
+  sgate: { name: 'Steintor', w: 1, h: 1, hp: 2000, cost: { stone: 30 }, time: 14, wall: true, gate: true, stone: true, age: 1,
     resist: { melee: 0.05, pierce: 0, siege: 1 }, desc: 'Eigene Einheiten können hindurch, Feinde nicht. Kann auf eigene Mauer gesetzt werden.' },
+  // Wahrzeichen: landmark = Zeitalter, das der Bau erreicht; eff = Bonus, solange es steht
+  lm_market: { name: 'Marktkreuz', w: 3, h: 3, hp: 2500, cost: AGES[1].cost, time: 100, landmark: 1, resist: LM_RES,
+    eff: { gatherAll: 0.1 }, desc: 'Wahrzeichen der Feudalzeit. Alle Dorfbewohner sammeln 10 % schneller.' },
+  lm_school: { name: 'Kriegsschule', w: 3, h: 3, hp: 2500, cost: AGES[1].cost, time: 100, landmark: 1, resist: LM_RES,
+    eff: { milProd: 0.25 }, desc: 'Wahrzeichen der Feudalzeit. Militär wird 25 % schneller ausgebildet.' },
+  lm_treasury: { name: 'Schatzkammer', w: 3, h: 3, hp: 3500, cost: AGES[2].cost, time: 150, landmark: 2, resist: LM_RES, drop: ['gold', 'stone'],
+    eff: { trickle: 1.5 }, desc: 'Wahrzeichen der Burgzeit. Bringt laufend 1,5 Gold pro Sekunde, Lager für Gold und Stein.' },
+  lm_fort: { name: 'Wehrburg', w: 4, h: 4, hp: 5000, cost: AGES[2].cost, time: 150, landmark: 2, resist: LM_RES,
+    attack: { dmg: 12, range: 9, cd: 1.4, n: 4 }, desc: 'Wahrzeichen der Burgzeit. Sehr widerstandsfähig, schießt vier Pfeile gleichzeitig.' },
+  lm_cathedral: { name: 'Dom', w: 4, h: 4, hp: 4500, cost: AGES[3].cost, time: 200, landmark: 3, resist: LM_RES,
+    eff: { heal: 2 }, desc: 'Wahrzeichen der Imperialzeit. Heilt eigene Einheiten in der Nähe (2 LP pro Sekunde).' },
+  lm_academy: { name: 'Kriegsakademie', short: 'Akademie', w: 4, h: 4, hp: 4500, cost: AGES[3].cost, time: 200, landmark: 3, resist: LM_RES,
+    eff: { atkMult: 0.15 }, desc: 'Wahrzeichen der Imperialzeit. Alle Militäreinheiten richten 15 % mehr Schaden an.' },
 };
-const VILLAGER_BUILDS = ['house', 'mill', 'lumber', 'mining', 'farm', 'barracks', 'range', 'stable', 'siege', 'tower',
-  'palisade', 'pgate', 'wall', 'sgate', 'tc'];
+for (const k in BUILDINGS) if (BUILDINGS[k].landmark) BUILDINGS[k].age = BUILDINGS[k].landmark - 1;
+const LANDMARKS = Object.keys(BUILDINGS).filter(k => BUILDINGS[k].landmark);
+const VILLAGER_BUILDS = ['house', 'mill', 'lumber', 'mining', 'farm', 'barracks', 'range', 'stable', 'siege', 'blacksmith', 'market', 'tower', 'keep',
+  'palisade', 'pgate', 'wall', 'sgate', 'tc', ...LANDMARKS];
+
+// Technologien: at = Gebäude, age = ab Zeitalter, req = Voraussetzung, eff = Wirkung
+const TECHS = {
+  wheelbarrow: { name: 'Schubkarre', at: 'tc', age: 1, cost: { food: 50, wood: 100 }, time: 25, eff: { carry: 5, villSpeed: 0.15 }, icon: 'wheel',
+    desc: 'Dorfbewohner tragen 5 Ressourcen mehr und laufen 15 % schneller.' },
+  textiles: { name: 'Wollkleidung', at: 'tc', age: 1, cost: { wood: 150 }, time: 25, eff: { villHp: 25 }, icon: 'shirt',
+    desc: 'Dorfbewohner erhalten +25 Lebenspunkte.' },
+  farm1: { name: 'Bewässerung', at: 'mill', age: 1, cost: { wood: 100, gold: 50 }, time: 30, eff: { gather: { food: 0.15 } }, icon: 'food',
+    desc: 'Nahrung wird 15 % schneller gesammelt.' },
+  farm2: { name: 'Fruchtwechsel', at: 'mill', age: 2, req: 'farm1', cost: { wood: 250, gold: 150 }, time: 45, eff: { gather: { food: 0.15 } }, icon: 'food',
+    desc: 'Nahrung wird weitere 15 % schneller gesammelt.' },
+  wood1: { name: 'Doppelaxt', at: 'lumber', age: 1, cost: { food: 50, wood: 100 }, time: 25, eff: { gather: { wood: 0.15 } }, icon: 'wood',
+    desc: 'Holz wird 15 % schneller gesammelt.' },
+  wood2: { name: 'Bügelsäge', at: 'lumber', age: 2, req: 'wood1', cost: { wood: 200, gold: 150 }, time: 45, eff: { gather: { wood: 0.15 } }, icon: 'wood',
+    desc: 'Holz wird weitere 15 % schneller gesammelt.' },
+  mine1: { name: 'Spitzhacke', at: 'mining', age: 1, cost: { food: 75, wood: 100 }, time: 25, eff: { gather: { gold: 0.15, stone: 0.15 } }, icon: 'pick',
+    desc: 'Gold und Stein werden 15 % schneller abgebaut.' },
+  mine2: { name: 'Schachtbau', at: 'mining', age: 2, req: 'mine1', cost: { wood: 250, gold: 150 }, time: 45, eff: { gather: { gold: 0.15, stone: 0.15 } }, icon: 'pick',
+    desc: 'Gold und Stein werden weitere 15 % schneller abgebaut.' },
+};
+// Schmiede: je drei Stufen für Nahkampf-/Fernkampfangriff und -rüstung (Stufe n ab Zeitalter n)
+[['melee', 'Geschmiedete Klingen', { atk: { melee: 1 } }, 'sword', 'Nahkampfeinheiten: +1 Angriff.'],
+ ['ranged', 'Pfeilspitzen', { atk: { pierce: 1 } }, 'arrow', 'Fernkampfeinheiten: +1 Angriff.'],
+ ['marmor', 'Kettenpanzer', { arm: { melee: 1 } }, 'shield', 'Militär: −1 Schaden durch Nahkampf.'],
+ ['parmor', 'Lederpolster', { arm: { pierce: 1 } }, 'shieldp', 'Militär: −1 Schaden durch Fernkampf.']].forEach(([id, name, eff, icon, desc]) => {
+  const costs = [{ food: 100, gold: 50 }, { food: 250, gold: 150 }, { food: 500, gold: 350 }];
+  for (let k = 1; k <= 3; k++) TECHS[id + k] = { name: name + ' ' + 'I'.repeat(k), at: 'blacksmith', age: k, req: k > 1 ? id + (k - 1) : null,
+    cost: costs[k - 1], time: 30 + k * 15, eff, icon, tier: k, desc };
+});
 
 // Schwierigkeitsgrade der KI
 // Kartentypen: Waldschwelle (niedriger = mehr Wald), Seen, Felsen, Zusatzgold
@@ -542,14 +637,15 @@ const MAPS = {
 const DIFFS = {
   easy: { name: 'Leicht', gather: 0.8, vills: 18, firstAttack: 600, waveSize: 6, waveGrow: 2, waveInterval: 240,
     walls: null, towers: 0, siege: false, catapults: false, maxBuild: 1, startBonus: 0, buildQueue: 1,
+    ages: [[480, 14], [1260, 20]], smith: 0,
     milPlan: [['barracks', 10, 0], ['range', 14, 0], ['stable', 17, 420]] },
   medium: { name: 'Mittel', gather: 1.0, vills: 28, firstAttack: 450, waveSize: 10, waveGrow: 3, waveInterval: 200,
     walls: 'palisade', wallTime: 300, towers: 2, towerTime: 360, siege: true, siegeTime: 540, catapults: false, maxBuild: 2,
-    startBonus: 0, buildQueue: 2,
+    startBonus: 0, buildQueue: 2, ages: [[300, 16], [780, 24], [1560, 28]], smith: 2,
     milPlan: [['barracks', 9, 0], ['range', 12, 0], ['stable', 15, 0], ['siege', 18, 480]] },
   hard: { name: 'Schwer', gather: 1.18, vills: 38, firstAttack: 330, waveSize: 12, waveGrow: 4, waveInterval: 170,
     walls: 'wall', wallTime: 300, towers: 3, towerTime: 300, siege: true, siegeTime: 420, catapults: true, maxBuild: 3,
-    startBonus: 100, buildQueue: 2,
+    startBonus: 100, buildQueue: 2, ages: [[240, 16], [600, 25], [1140, 32]], smith: 3,
     milPlan: [['barracks', 8, 0], ['range', 10, 0], ['stable', 13, 0], ['siege', 16, 360], ['barracks', 22, 540], ['range', 26, 600]] },
 };
 
@@ -907,7 +1003,10 @@ function spawnUnit(type, owner, x, y) {
     aggr: false, pending: null, queued: false, pathT: 0, pathFails: 0, lastAttacker: null, wanderT: 3 + rnd() * 6,
   };
   G.units.push(u); G.byId.set(u.id, u);
-  if (owner < 2) { G.players[owner].pop += d.pop; G.players[owner].stats.trained++; }
+  if (owner < 2) {
+    const p = G.players[owner]; p.pop += d.pop; p.stats.trained++;
+    if (type === 'villager') { u.hp = u.maxHp = d.hp + (p.villHp || 0); if (p.villSpeed > 1) u.spd = d.speed * p.villSpeed; }
+  }
   return u;
 }
 function alive(e) { return e && !e.dead; }
@@ -972,7 +1071,7 @@ function stopMoving(u) { u.path = null; u.dest = null; u.pending = null; u.movin
 function moveTowards(u, tx, ty, dt, slack) {
   const dx = tx - u.x, dy = ty - u.y, d = hyp(dx, dy);
   if (d <= (slack || 0.06)) return true;
-  const step = Math.min(d, u.def.speed * dt);
+  const step = Math.min(d, (u.spd || u.def.speed) * dt);
   const nx = u.x + dx / d * step, ny = u.y + dy / d * step;
   u.facing = Math.atan2(dy, dx); u.moving = true;
   const curFree = passableXY(Math.floor(u.x), Math.floor(u.y), u.owner);
@@ -1204,21 +1303,27 @@ function performAttack(u, t) {
     const ty = t.kind === 'bld' ? clamp(u.y, t.ty + 0.2, t.ty + t.h - 0.2) : t.y;
     spawnProjectile(d.projectile, u, u.x, u.y, 0.6, t, tx, ty, d);
   } else {
-    applyDamage(t, calcDamage(d, t), u);
+    applyDamage(t, calcDamage(d, t, u.owner), u);
     if (t.kind === 'bld' && Math.random() < 0.35) addEffect('dust', t.x + (Math.random() - 0.5) * t.w * 0.6, t.y + (Math.random() - 0.5) * t.h * 0.6);
   }
 }
-function calcDamage(src, t) {
+// owner: Besitzer des Angreifers (Schmiede-Verbesserungen und Wahrzeichen-Boni gelten nur für Militär)
+function calcDamage(src, t, owner) {
+  const up = src.military && !src.siege && owner < 2 ? G.players[owner] : null;
   if (t.kind === 'bld') {
     const base = src.atkBld !== undefined ? src.atkBld : src.atk;
     const rs = BUILDINGS[t.type].resist || BLD_RES_DEF;
     const f = rs[src.atkType] !== undefined ? rs[src.atkType] : 1;
-    return Math.max(0.1, base * f);
+    return Math.max(0.1, base * f * (src.military && owner < 2 ? G.players[owner].atkMult || 1 : 1));
   }
   if (src.bldOnly) return 0;
-  const base = src.atk + ((src.bonus && src.bonus[t.def.cls]) || 0);
+  let base = src.atk + ((src.bonusVs && src.bonusVs[t.type]) || 0);
+  if (up) base = (base + (up.atkUp ? up.atkUp[src.atkType] || 0 : 0)) * (up.atkMult || 1);
   const f = (t.def.resist && t.def.resist[src.atkType] !== undefined) ? t.def.resist[src.atkType] : 1;
-  return Math.max(0.2, base * f);
+  let dmg = base * f;
+  // Rüstung aus der Schmiede: zieht Schaden ab (nur Militär, keine Belagerung)
+  if (t.def.military && !t.def.siege && t.owner < 2) { const a = G.players[t.owner].armUp; if (a && a[src.atkType]) dmg -= a[src.atkType]; }
+  return Math.max(0.2, dmg);
 }
 function applyDamage(t, amount, src) {
   if (!alive(t) || amount <= 0) return;
@@ -1330,11 +1435,12 @@ function updateGather(u, o, dt) {
   }
   const group = r.kind === 'bld' ? 'food' : r.kind === 'unit' ? 'food' : r.rtype;
   if (u.carry > 0 && u.carryType !== group) { u.carry = 0; u.carryFrac = 0; }
-  if (u.carry >= CARRY) { o.phase = 'return'; u.pathTarget = null; u.path = null; return; }
+  const pl = G.players[u.owner], cap = pl.carry || CARRY;
+  if (u.carry >= cap) { o.phase = 'return'; u.pathTarget = null; u.path = null; return; }
   o.lx = r.x; o.ly = r.y;
   // Jagd
   if (r.kind === 'unit') {
-    if (inAttackRange(u, r)) { stopMoving(u); u.facing = Math.atan2(r.y - u.y, r.x - u.x); if (u.cd <= 0) { u.atkAnim = 0.35; applyDamage(r, calcDamage(u.def, r), u); u.cd = u.def.cd; } }
+    if (inAttackRange(u, r)) { stopMoving(u); u.facing = Math.atan2(r.y - u.y, r.x - u.x); if (u.cd <= 0) { u.atkAnim = 0.35; applyDamage(r, calcDamage(u.def, r, u.owner), u); u.cd = u.def.cd; } }
     else {
       if (dist(u.x, u.y, r.x, r.y) < 3 && lineClear(u.x, u.y, r.x, r.y, u.owner)) { u.path = null; moveTowards(u, r.x, r.y, dt); }
       else if (dist(o.hx || r.x, o.hy || r.y, u.x, u.y) > 30) { o.res = null; }
@@ -1361,15 +1467,15 @@ function updateGather(u, o, dt) {
   u.facing = Math.atan2(r.y - u.y, r.x - u.x);
   u.atkAnim = (u.atkAnim > 0) ? u.atkAnim : 0.3;
   const sub = r.kind === 'bld' ? 'farm' : r.sub;
-  const mult = (G.players[u.owner].gatherMult || 1);
+  const mult = (pl.gatherMult || 1) * (pl.gather ? pl.gather[group] : 1);
   u.carryFrac += GATHER_RATE[sub] * mult * dt;
   u.carryType = group;
-  while (u.carryFrac >= 1 && u.carry < CARRY) {
+  while (u.carryFrac >= 1 && u.carry < cap) {
     u.carryFrac -= 1;
     if (r.kind === 'res') { r.amount -= 1; if (r.amount <= 0) { u.carry++; removeResource(r); break; } }
     u.carry++;
   }
-  if (u.carry >= CARRY) { o.phase = 'return'; u.pathTarget = null; }
+  if (u.carry >= cap) { o.phase = 'return'; u.pathTarget = null; }
 }
 
 /* ---------- Dorfbewohner: Bauen ---------- */
@@ -1599,6 +1705,15 @@ function completeBuilding(b, silent) {
   b.built = true; b.progress = 1; G.shadowDirty = true;
   const d = BUILDINGS[b.type];
   if (d.pop && b.owner < 2) G.players[b.owner].popCap += d.pop;
+  if (d.landmark && b.owner < 2) {
+    const p = G.players[b.owner];
+    if (d.landmark > p.age) {
+      p.age = d.landmark;
+      if (!silent) notify((b.owner === G.human ? 'Du hast die ' : (G.net ? 'Der Gegner hat die ' : 'Die KI hat die ')) + AGES[p.age].name + ' erreicht!', b.owner !== G.human);
+      silent = true;
+    }
+    recalcPlayer(b.owner);
+  }
   if (!silent && b.owner === G.human) {
     if (!d.wall && !d.farm) notify(d.name + ' fertiggestellt.');
   }
@@ -1617,8 +1732,9 @@ function destroyBuilding(b) {
   removeBuildingSilently(b);
   if (b.built && d.pop && b.owner < 2) G.players[b.owner].popCap -= d.pop;
   // Warteschlange erstatten
-  if (b.owner < 2) for (const q of b.queue) refund(G.players[b.owner], UNITS[q.type].cost, 1);
+  if (b.owner < 2) for (const q of b.queue) { refund(G.players[b.owner], qCost(q), 1); if (q.tech) delete G.players[b.owner].researching[q.tech]; }
   b.queue.length = 0;
+  if (b.built && d.landmark && b.owner < 2) recalcPlayer(b.owner); // Bonus geht mit dem Wahrzeichen verloren
   for (let k = 0; k < Math.min(14, 3 + b.w * b.h * 2); k++) addEffect('debris', b.tx + Math.random() * b.w, b.ty + Math.random() * b.h);
   addEffect('rubble', b.x, b.y, b);
   if (b.owner === G.human && !d.line) notify(d.name + ' zerstört!', true);
@@ -1630,29 +1746,114 @@ function deleteOwnBuilding(b) {
   destroyBuilding(b);
 }
 
-// Produktion
+// Produktion und Forschung teilen sich die Warteschlange eines Gebäudes ({type} = Einheit, {tech} = Technologie)
+const qCost = q => q.tech ? TECHS[q.tech].cost : UNITS[q.type].cost;
+const qTime = q => q.tech ? TECHS[q.tech].time : UNITS[q.type].time;
 function queueUnit(b, type) {
   const p = G.players[b.owner]; const d = UNITS[type];
   if (!b.built || b.dead) return 'Gebäude nicht fertig';
+  if (d.age > p.age) return 'Benötigt ' + AGES[d.age].name;
   if (b.queue.length >= 8) return 'Warteschlange voll';
   if (!canAfford(p, d.cost)) return 'Nicht genug Ressourcen';
   pay(p, d.cost);
   b.queue.push({ type, t: 0, id: G.nextId++ });
   return null;
 }
+// null = erforschbar, sonst Grund als Text
+function techBlock(p, id) {
+  const t = TECHS[id];
+  if (p.techs[id]) return 'Bereits erforscht';
+  if (p.researching[id]) return 'Wird erforscht';
+  if (t.age > p.age) return 'Benötigt ' + AGES[t.age].name;
+  if (t.req && !p.techs[t.req]) return 'Benötigt ' + TECHS[t.req].name;
+  return null;
+}
+function queueTech(b, id) {
+  const p = G.players[b.owner], t = TECHS[id];
+  if (!t || t.at !== b.type || !b.built || b.dead) return 'Gebäude nicht fertig';
+  const why = techBlock(p, id); if (why) return why;
+  if (b.queue.length >= 8) return 'Warteschlange voll';
+  if (!canAfford(p, t.cost)) return 'Nicht genug Ressourcen';
+  pay(p, t.cost); p.researching[id] = true;
+  b.queue.push({ tech: id, t: 0, id: G.nextId++ });
+  return null;
+}
 function cancelQueue(b, idx) {
   const q = b.queue[idx]; if (!q) return;
-  refund(G.players[b.owner], UNITS[q.type].cost, 1);
+  refund(G.players[b.owner], qCost(q), 1);
+  if (q.tech) delete G.players[b.owner].researching[q.tech];
   b.queue.splice(idx, 1);
+}
+function completeTech(owner, id) {
+  const p = G.players[owner]; delete p.researching[id]; p.techs[id] = true;
+  const e = TECHS[id].eff;
+  if (e.villHp) for (const u of G.units) if (!u.dead && u.owner === owner && u.type === 'villager') { u.maxHp += e.villHp; u.hp += e.villHp; }
+  recalcPlayer(owner);
+  if (owner === G.human) notify(TECHS[id].name + ' erforscht.');
+}
+// Boni aus Technologien und stehenden Wahrzeichen neu berechnen (selten: nach Forschung, Bau oder Verlust eines Wahrzeichens)
+function recalcPlayer(owner) {
+  const p = G.players[owner];
+  p.gather = { food: 1, wood: 1, gold: 1, stone: 1 }; p.carry = CARRY; p.villSpeed = 1; p.villHp = 0;
+  p.atkUp = { melee: 0, pierce: 0 }; p.armUp = { melee: 0, pierce: 0 }; p.milProd = 1; p.atkMult = 1; p.trickle = 0; p.heal = 0;
+  const apply = e => {
+    if (!e) return;
+    for (const k in e.gather || {}) p.gather[k] += e.gather[k];
+    if (e.gatherAll) for (const k of RES_TYPES) p.gather[k] += e.gatherAll;
+    if (e.carry) p.carry += e.carry;
+    if (e.villSpeed) p.villSpeed += e.villSpeed;
+    if (e.villHp) p.villHp += e.villHp;
+    for (const k in e.atk || {}) p.atkUp[k] += e.atk[k];
+    for (const k in e.arm || {}) p.armUp[k] += e.arm[k];
+    if (e.milProd) p.milProd += e.milProd;
+    if (e.atkMult) p.atkMult += e.atkMult;
+    if (e.trickle) p.trickle += e.trickle;
+    if (e.heal) p.heal += e.heal;
+  };
+  for (const id in p.techs) apply(TECHS[id].eff);
+  for (const b of G.buildings) if (!b.dead && b.built && b.owner === owner && BUILDINGS[b.type].landmark) apply(BUILDINGS[b.type].eff);
+  const spd = p.villSpeed > 1 ? UNITS.villager.speed * p.villSpeed : 0;
+  for (const u of G.units) if (!u.dead && u.owner === owner && u.type === 'villager') { if (spd) u.spd = spd; else delete u.spd; }
+}
+// Darf der Spieler dieses Gebäude jetzt bauen? null = ja, sonst Grund
+function buildBlock(p, type) {
+  const d = BUILDINGS[type];
+  if (d.age > p.age) return 'Benötigt ' + AGES[d.age].name;
+  if (d.landmark) {
+    for (const b of G.buildings) {
+      if (b.dead || b.owner !== p.id || !BUILDINGS[b.type].landmark) continue;
+      if (b.type === type) return 'Bereits gebaut';
+      if (!b.built) return 'Es wird schon ein Wahrzeichen gebaut';
+    }
+  }
+  return null;
+}
+// Markt: 100 Einheiten kaufen oder verkaufen; Preis in Gold je 100, jeder Handel verschiebt ihn
+const MKT_STEP = 4, MKT_MIN = 20, MKT_MAX = 400;
+const mktBuy = (p, r) => Math.round(p.mkt[r] * 1.3), mktSell = (p, r) => Math.round(p.mkt[r] * 0.7);
+function marketTrade(p, r, buy) {
+  if (r !== 'food' && r !== 'wood' && r !== 'stone') return 'Unbekannte Ware';
+  if (buy) {
+    const price = mktBuy(p, r); if (p.res.gold < price) return 'Nicht genug Gold';
+    p.res.gold -= price; p.res[r] += 100; p.mkt[r] = Math.min(MKT_MAX, p.mkt[r] + MKT_STEP);
+  } else {
+    if (p.res[r] < 100) return 'Nicht genug ' + RES_DE[r];
+    p.res[r] -= 100; p.res.gold += mktSell(p, r); p.mkt[r] = Math.max(MKT_MIN, p.mkt[r] - MKT_STEP);
+  }
+  return null;
 }
 function updateBuilding(b, dt) {
   b.builders = b.buildersNow; b.buildersNow = 0;
   if (!b.built) return;
   const d = BUILDINGS[b.type];
   // Produktion
-  if (b.queue.length) {
+  if (b.queue.length && b.queue[0].tech) {
+    const q = b.queue[0];
+    q.t += dt;
+    if (q.t >= TECHS[q.tech].time) { b.queue.shift(); completeTech(b.owner, q.tech); }
+  } else if (b.queue.length) {
     const q = b.queue[0]; const ud = UNITS[q.type]; const p = G.players[b.owner];
-    if (q.t < ud.time) q.t += dt * (p.prodMult || 1);
+    if (q.t < ud.time) q.t += dt * (p.prodMult || 1) * (ud.military ? p.milProd || 1 : 1);
     if (q.t >= ud.time) {
       if (p.pop + ud.pop <= Math.min(MAX_POP, p.popCap)) {
         const sp = spawnPointFor(b, q.type);
@@ -1679,10 +1880,10 @@ function updateBuilding(b, dt) {
       });
       if (tgt) {
         b.cd = d.attack.cd;
-        const n = b.type === 'tc' ? 2 : 1;
+        const n = d.attack.n || 1;
         for (let k = 0; k < n; k++) {
           const src = { atk: d.attack.dmg, atkType: 'pierce', bonus: {} };
-          spawnProjectile('arrow', b, b.x - 0.2 + k * 0.4, b.y - 0.2, b.type === 'tower' ? 3.2 : 2.4, tgt, tgt.x, tgt.y, src);
+          spawnProjectile('arrow', b, b.x - 0.2 + (n > 1 ? k * 0.4 / (n - 1) : 0), b.y - 0.2, b.type === 'tower' || b.type === 'keep' ? 3.2 : 2.4, tgt, tgt.x, tgt.y, src);
         }
       } else b.cd = 0.3;
     }
@@ -1738,10 +1939,10 @@ function wallLine(x0, y0, x1, y1) {
 /* ============================ 7. KAMPF & SPIELABLAUF ============================ */
 function spawnProjectile(kind, src, x, y, z, target, tx, ty, def) {
   const d = dist(x, y, tx, ty);
-  const speed = kind === 'stone' ? 7 : 13;
+  const speed = kind === 'stone' ? 7 : kind === 'bullet' ? 24 : 13;
   G.projectiles.push({
     kind, owner: src.owner, x0: x, y0: y, z0: z, x, y, z, tx, ty, target, def, t: 0, dur: Math.max(0.15, d / speed),
-    arc: kind === 'stone' ? 1.2 + d * 0.22 : 0.35 + d * 0.06, src,
+    arc: kind === 'stone' ? 1.2 + d * 0.22 : kind === 'bullet' ? 0.1 : 0.35 + d * 0.06, src,
   });
 }
 function updateProjectiles(dt) {
@@ -1750,7 +1951,7 @@ function updateProjectiles(dt) {
     const p = ps[k];
     p.t += dt;
     // Pfeile verfolgen bewegliche Ziele leicht
-    if (p.kind === 'arrow' && alive(p.target) && p.target.kind === 'unit') { p.tx += (p.target.x - p.tx) * 0.15; p.ty += (p.target.y - p.ty) * 0.15; }
+    if ((p.kind === 'arrow' || p.kind === 'bullet') && alive(p.target) && p.target.kind === 'unit') { p.tx += (p.target.x - p.tx) * 0.15; p.ty += (p.target.y - p.ty) * 0.15; }
     const f = Math.min(1, p.t / p.dur);
     p.x = p.x0 + (p.tx - p.x0) * f; p.y = p.y0 + (p.ty - p.y0) * f;
     p.z = p.z0 * (1 - f) + Math.sin(f * Math.PI) * p.arc;
@@ -1761,16 +1962,16 @@ function updateProjectiles(dt) {
         queryUnits(p.tx, p.ty, sr, u => {
           if (u.owner === p.owner || u.owner >= 2) return;
           const fall = 1 - dist(u.x, u.y, p.tx, p.ty) / sr * 0.5;
-          applyDamage(u, calcDamage(p.def, u) * fall, alive(p.src) ? p.src : null);
+          applyDamage(u, calcDamage(p.def, u, p.owner) * fall, alive(p.src) ? p.src : null);
         });
         queryBuildings(p.tx, p.ty, sr * 0.6, b => {
           if (b.owner === p.owner || b.owner >= 2) return;
-          applyDamage(b, calcDamage(p.def, b), alive(p.src) ? p.src : null);
+          applyDamage(b, calcDamage(p.def, b, p.owner), alive(p.src) ? p.src : null);
         });
       } else if (alive(p.target)) {
         const t = p.target;
         const hit = t.kind === 'bld' ? true : dist(t.x, t.y, p.tx, p.ty) < 0.7;
-        if (hit) applyDamage(t, calcDamage(p.def, t), alive(p.src) ? p.src : null);
+        if (hit) applyDamage(t, calcDamage(p.def, t, p.owner), alive(p.src) ? p.src : null);
       }
       ps[k] = ps[ps.length - 1]; ps.pop();
     }
@@ -1798,7 +1999,21 @@ function updateEffects(dt) {
 
 function newPlayer(i) {
   return { id: i, res: { food: 200, wood: 200, gold: 100, stone: 100 }, pop: 0, popCap: 0, gatherMult: 1, prodMult: 1,
-    stats: { gathered: 0, trained: 0, lost: 0, kills: 0, razed: 0, built: 0 }, defeated: false };
+    stats: { gathered: 0, trained: 0, lost: 0, kills: 0, razed: 0, built: 0 }, defeated: false,
+    age: 0, techs: {}, researching: {}, mkt: { food: 100, wood: 100, stone: 100 } };
+}
+// Spielstände ohne Zeitalter (ältere Version) auf den aktuellen Stand bringen
+function migrateGame(g) {
+  const prev = G; G = g;
+  for (const p of g.players) {
+    if (p.age === undefined) { p.age = 0; p.techs = {}; p.researching = {}; p.mkt = { food: 100, wood: 100, stone: 100 }; }
+    if (!g.buildings.some(b => !b.dead && b.owner === p.id && b.capital)) {
+      const tc = g.buildings.find(b => !b.dead && b.owner === p.id && b.type === 'tc' && b.built);
+      if (tc) tc.capital = true;
+    }
+    recalcPlayer(p.id);
+  }
+  G = prev;
 }
 function newGame(seed, diff, opts) {
   opts = opts || {};
@@ -1816,6 +2031,8 @@ function newGame(seed, diff, opts) {
   for (let p = 0; p < 2; p++) {
     const b = info.bases[p];
     const tc = placeBuilding('tc', b.x, b.y, p, true);
+    tc.capital = true; // Hauptstadt-Dorfzentrum: zählt als Wahrzeichen
+    recalcPlayer(p);
     for (let k = 0; k < 6; k++) {
       const sp = spawnPointFor(tc, 'villager');
       spawnUnit('villager', p, sp.x, sp.y);
@@ -1845,6 +2062,8 @@ function simStep(dt) {
   updateProjectiles(dt);
   updateEffects(dt);
   for (const ai of G.ais) aiUpdate(ai, dt);
+  for (const p of G.players) if (p.trickle) p.res.gold += p.trickle * dt;
+  if (G.tick % 30 === 0) landmarkHeal();
   // Aufräumen
   if (G.tick % 15 === 0) {
     if (G.unitsDirty) { G.units = G.units.filter(u => !u.dead); G.unitsDirty = false; }
@@ -1856,13 +2075,21 @@ function simStep(dt) {
     checkVictory();
   }
 }
+// Dom: heilt eigene Einheiten in der Nähe (einmal pro Sekunde)
+function landmarkHeal() {
+  for (const b of G.buildings) {
+    if (b.dead || !b.built || b.owner >= 2) continue;
+    const e = BUILDINGS[b.type].eff; if (!e || !e.heal) continue;
+    queryUnits(b.x, b.y, 9, u => { if (!u.dead && u.owner === b.owner && u.hp < u.maxHp && !u.def.siege) u.hp = Math.min(u.maxHp, u.hp + e.heal); });
+  }
+}
 function checkVictory() {
-  // Niederlage: keine (fertigen) Gebäude außer Mauern mehr ODER kein Dorfzentrum und keine Einheiten mehr
+  // Wahrzeichen-Sieg (wie AoE4): Wer alle Wahrzeichen verliert (das erste Dorfzentrum zählt mit), hat verloren.
+  // Außerdem verliert, wer keine fertigen Gebäude außer Mauern mehr hat.
   for (let p = 0; p < 2; p++) {
-    let blds = 0, tcs = 0, units = 0;
-    for (const b of G.buildings) if (!b.dead && b.owner === p && b.built && !BUILDINGS[b.type].wall) { blds++; if (b.type === 'tc') tcs++; }
-    for (const u of G.units) if (!u.dead && u.owner === p) units++;
-    if (blds === 0 || (tcs === 0 && units === 0)) G.players[p].defeated = true;
+    let blds = 0, lms = 0;
+    for (const b of G.buildings) if (!b.dead && b.owner === p && b.built && !BUILDINGS[b.type].wall) { blds++; if (b.capital || BUILDINGS[b.type].landmark) lms++; }
+    if (blds === 0 || lms === 0) G.players[p].defeated = true;
   }
   if (G.players[0].defeated || G.players[1].defeated) {
     G.over = { winner: G.players[0].defeated ? (G.players[1].defeated ? -1 : 1) : 0, time: G.time };
@@ -1894,6 +2121,12 @@ function execCmd(p, c) {
   } else if (c.c === 'unq') {
     const b = cmdEnts(p, [c.id], 'bld')[0];
     if (b) { const k = b.queue.findIndex(q => q.id === c.q); if (k >= 0) cancelQueue(b, k); }
+  } else if (c.c === 'res') {
+    const b = cmdEnts(p, [c.id], 'bld')[0];
+    if (b && Object.prototype.hasOwnProperty.call(TECHS, c.tech)) { const err = queueTech(b, c.tech); if (err) cmdMsg(p, err); }
+  } else if (c.c === 'mkt') {
+    if (!G.buildings.some(b => !b.dead && b.built && b.owner === p && BUILDINGS[b.type].market)) return;
+    const err = marketTrade(G.players[p], c.r, !!c.buy); if (err) cmdMsg(p, err);
   } else if (c.c === 'stop') { for (const u of cmdEnts(p, c.ids, 'unit')) clearOrder(u); }
   else if (c.c === 'del') { for (const e of cmdEnts(p, c.ids)) { if (e.kind === 'unit') killUnit(e); else deleteOwnBuilding(e); } }
 }
@@ -1957,7 +2190,8 @@ function execBuild(p, c) {
   const vills = cmdEnts(p, c.ids, 'unit').filter(u => u.type === 'villager');
   if (!vills.length) return;
   const pl = G.players[p]; const placed = [];
-  for (const t of c.tiles.slice(0, 200)) {
+  const why = buildBlock(pl, c.type); if (why) { cmdMsg(p, why + '.'); return; }
+  for (const t of c.tiles.slice(0, d.landmark ? 1 : 200)) {
     const tx = t[0] | 0, ty = t[1] | 0;
     if (!canPlace(c.type, tx, ty, p)) continue;
     if (!canAfford(pl, d.cost)) { cmdMsg(p, 'Nicht genug Ressourcen.'); break; }
@@ -2021,7 +2255,7 @@ function stateHash() {
   for (const u of G.units) if (!u.dead) { mixN(u.id); mixN(u.x); mixN(u.y); mixN(u.hp); }
   for (const b of G.buildings) if (!b.dead) { mixN(b.id); mixN(b.hp); mixN(b.progress); mixN(b.queue.length); }
   for (const r of G.resources) if (!r.dead) mixN(r.amount);
-  for (const p of G.players) for (const k of RES_TYPES) mixN(p.res[k]);
+  for (const p of G.players) { for (const k of RES_TYPES) mixN(p.res[k]); mixN(p.age); }
   return h >>> 0;
 }
 
@@ -2034,7 +2268,8 @@ function createAI(owner, diff) {
     owner, diff, d, t: 0, ecoT: 0, milT: 0, defT: 0, atkT: 0, bldT: 0,
     nextAttack: d.firstAttack, wave: 0, attackers: new Set(), defenders: new Set(),
     planIdx: 0, wallsDone: false, wallStarted: false, towersBuilt: 0, lastHouseT: -99, threat: null,
-    corner: owner === 0 ? 0 : N - 1,
+    corner: owner === 0 ? 0 : N - 1, ageT: 0, resT: 0, saving: null,
+    lmPick: [0, rnd() < 0.5 ? 0 : 1, rnd() < 0.5 ? 0 : 1, rnd() < 0.5 ? 0 : 1], // welches der zwei Wahrzeichen je Zeitalter
   };
 }
 // Relative Koordinaten (Abstand zur eigenen Ecke)
@@ -2106,8 +2341,10 @@ function aiUpdate(ai, dt) {
   ai.t += dt;
   const p = G.players[ai.owner];
   if (p.defeated) return;
-  ai.ecoT -= dt; ai.milT -= dt; ai.defT -= dt; ai.atkT -= dt; ai.bldT -= dt;
+  ai.ecoT -= dt; ai.milT -= dt; ai.defT -= dt; ai.atkT -= dt; ai.bldT -= dt; ai.ageT -= dt; ai.resT -= dt;
   if (ai.defT <= 0) { ai.defT = 1; aiDefense(ai); }
+  if (ai.ageT <= 0) { ai.ageT = 2; aiAgeUp(ai); }
+  if (ai.resT <= 0) { ai.resT = 3; aiResearch(ai); }
   if (ai.ecoT <= 0) { ai.ecoT = 0.7; aiEconomy(ai); }
   if (ai.bldT <= 0) { ai.bldT = 1.5; aiBuildings(ai); }
   if (ai.milT <= 0) { ai.milT = 1.2; aiMilitary(ai); }
@@ -2130,11 +2367,18 @@ function aiEconomy(ai) {
   else if (t < 420) ratio = { food: 0.45, wood: 0.33, gold: 0.14, stone: wantStone ? 0.08 : 0 };
   else ratio = { food: 0.4, wood: 0.28, gold: 0.22, stone: wantStone ? 0.1 : 0.04 };
   if (ai.d.walls === 'wall' && !ai.wallsDone && t > ai.d.wallTime - 120) { ratio.stone += 0.08; ratio.food -= 0.08; }
+  if (ai.saving) { // Für das nächste Zeitalter sparen: mehr Nahrung und Gold
+    if (p.res.gold < ai.saving.gold) ratio.gold += 0.12;
+    if (p.res.food < ai.saving.food) ratio.food += 0.14;
+    else ratio.food *= 0.6;
+    if (p.res.gold >= ai.saving.gold) ratio.gold *= 0.3;
+  }
+  if (p.age >= 2) { ratio.gold += 0.06; ratio.wood -= 0.04; }
   // Vorräte berücksichtigen: Überschuss senkt, Mangel erhöht den Anteil
   for (const k of RES_TYPES) {
     if (ratio[k] <= 0) continue;
     const r = p.res[k];
-    if (r > 1200) ratio[k] *= 0.25; else if (r > 600) ratio[k] *= 0.55; else if (r < 100) ratio[k] *= 1.35;
+    if (r > 1200) ratio[k] *= 0.1; else if (r > 600) ratio[k] *= 0.35; else if (r < 100) ratio[k] *= 1.35;
   }
   const sum = RES_TYPES.reduce((a, k) => a + ratio[k], 0);
   for (const k of RES_TYPES) ratio[k] /= sum;
@@ -2218,6 +2462,49 @@ function aiAssign(ai, u, type) {
   return true;
 }
 
+/* ---------- Zeitalter & Forschung ---------- */
+function aiAgeUp(ai) {
+  const p = G.players[ai.owner]; const tc = aiTC(ai);
+  ai.saving = null;
+  const plan = ai.d.ages[p.age];
+  if (!tc || !tc.built || !plan || ai.t < plan[0] - 40) return;
+  if (aiUnits(ai, u => u.type === 'villager').length < plan[1]) return;
+  if (G.buildings.some(b => !b.dead && b.owner === ai.owner && BUILDINGS[b.type].landmark && !b.built)) return;
+  const next = p.age + 1;
+  const type = LANDMARKS.filter(k => BUILDINGS[k].landmark === next)[ai.lmPick[next]];
+  ai.saving = BUILDINGS[type].cost;
+  if (ai.t < plan[0] || !canAfford(p, ai.saving)) return;
+  const dir = ai.owner ? -1 : 1;
+  const spot = aiFindSpot(ai, type, tc.x - dir * 2 + dir * 5, tc.y - dir * 4, { maxR: 12, inside: !!ai.d.walls })
+    || aiFindSpot(ai, type, tc.x, tc.y, { maxR: 30, margin: 0 });
+  if (spot && aiPlace(ai, type, spot, Math.min(5, 2 + next))) ai.saving = null;
+}
+const AI_ECO_TECHS = ['wheelbarrow', 'wood1', 'farm1', 'mine1', 'textiles', 'wood2', 'farm2', 'mine2'];
+function aiResearch(ai) {
+  const p = G.players[ai.owner];
+  // Markt: Überschüsse in Gold tauschen bzw. fehlende Nahrung und Holz zukaufen
+  if (G.buildings.some(b => !b.dead && b.built && b.owner === ai.owner && b.type === 'market')) {
+    const sv = ai.saving || { food: 0, gold: 0 };
+    if (p.res.stone > 900) marketTrade(p, 'stone', false);
+    if (p.res.food > 1500 + sv.food) marketTrade(p, 'food', false);
+    if (p.res.gold > 500 + sv.gold) {
+      if (p.res.wood < 250) marketTrade(p, 'wood', true);
+      else if (p.res.food < Math.max(400, sv.food)) marketTrade(p, 'food', true);
+    }
+  }
+  const list = AI_ECO_TECHS.filter(id => ai.d.smith > 0 || TECHS[id].age <= 1);
+  for (let k = 1; k <= ai.d.smith; k++) for (const l of ['melee', 'ranged', 'parmor', 'marmor']) list.push(l + k);
+  for (const id of list) {
+    const t = TECHS[id];
+    if (techBlock(p, id)) continue;
+    // Puffer, damit Dorfbewohner und Armee weiterlaufen
+    let ok = true; for (const k in t.cost) if (p.res[k] < t.cost[k] + (k === 'food' ? 100 : 50) + (ai.saving ? ai.saving[k] || 0 : 0)) ok = false;
+    if (!ok) continue;
+    const b = aiBlds(ai, t.at).find(x => x.queue.length < (t.at === 'tc' ? 2 : 1));
+    if (b && !queueTech(b, id)) return;
+  }
+}
+
 /* ---------- Gebäude ---------- */
 function aiBuildings(ai) {
   const p = G.players[ai.owner]; const tc = aiTC(ai); if (!tc) return;
@@ -2239,20 +2526,24 @@ function aiBuildings(ai) {
   const plan = ai.d.milPlan;
   const want = {};
   for (const [type, minV, minT] of plan) if (nv >= minV && t >= minT) want[type] = (want[type] || 0) + 1;
+  if (ai.d.smith && nv >= 14) want.blacksmith = 1;
+  if (ai.diff !== 'easy' && nv >= 20 && t >= 420) want.market = 1;
+  if (ai.diff === 'hard' && p.age >= 2 && p.res.stone >= 650) want.keep = 1;
   for (const type in want) {
     if (type === 'siege' && !ai.d.siege) continue;
+    if (BUILDINGS[type].age > p.age) continue;
     if (aiBuildingCount(ai, type) < want[type]) {
       const dir = ai.owner ? -1 : 1;
       const spot = aiFindSpot(ai, type, tc.x + dir * 6, tc.y + dir * 6, { maxR: 10, inside: !!ai.d.walls });
       if (spot && aiPlace(ai, type, spot, 2)) return;
       if (!spot) {
-        const s2 = aiFindSpot(ai, type, tc.x + dir * 4, tc.y + dir * 8, { maxR: 14 });
+        const s2 = aiFindSpot(ai, type, tc.x + dir * 4, tc.y + dir * 8, { maxR: 14 }) || aiFindSpot(ai, type, tc.x, tc.y, { maxR: 26, margin: 0 });
         if (s2 && aiPlace(ai, type, s2, 2)) return;
       }
     }
   }
   // Türme
-  if (ai.d.towers && t >= ai.d.towerTime && ai.towersBuilt < ai.d.towers && p.res.stone >= 125) {
+  if (ai.d.towers && p.age >= BUILDINGS.tower.age && t >= ai.d.towerTime && ai.towersBuilt < ai.d.towers && p.res.stone >= 125) {
     const k = ai.towersBuilt; const dir = ai.owner ? -1 : 1;
     const anchors = [[tc.x + dir * 8, tc.y + dir * 8], [tc.x + dir * 12, tc.y + dir * 3], [tc.x + dir * 3, tc.y + dir * 12]];
     const a = anchors[k % anchors.length];
@@ -2260,7 +2551,7 @@ function aiBuildings(ai) {
     if (spot && aiPlace(ai, 'tower', spot, 2)) { ai.towersBuilt++; return; }
   }
   // Mauern
-  if (ai.d.walls && t >= ai.d.wallTime && !ai.wallsDone) aiWalls(ai);
+  if (ai.d.walls && t >= ai.d.wallTime && !ai.wallsDone && BUILDINGS[ai.d.walls].age <= p.age) aiWalls(ai);
   // Zusätzliches Dorfzentrum ersetzen, falls verloren -> nicht vorgesehen
   aiAssignIdleBuilders(ai);
 }
@@ -2322,34 +2613,57 @@ function aiMilitary(ai) {
   const p = G.players[ai.owner]; const t = ai.t;
   const vills = aiUnits(ai, u => u.type === 'villager').length;
   const army = aiUnits(ai, u => u.def.military);
-  const cnt = { spear: 0, archer: 0, horseman: 0, ram: 0, catapult: 0 };
+  const cnt = {}; for (const k in UNITS) cnt[k] = 0;
   for (const u of army) cnt[u.type]++;
-  // Gegnerische Zusammensetzung -> Konter
-  const enemy = { spear: 0, archer: 0, horseman: 0 };
-  for (const u of G.units) if (!u.dead && u.owner === enemyOf(ai) && enemy[u.type] !== undefined) enemy[u.type]++;
-  const w = { spear: 1 + enemy.horseman * 0.35, archer: 1 + enemy.spear * 0.35, horseman: 0.8 + enemy.archer * 0.35 };
-  // Wirtschaft hat Vorrang, solange wenig Dorfbewohner
+  // Gegnerische Zusammensetzung -> Konter (leicht/schwer wie in AoE4)
+  const e = { cav: 0, ranged: 0, lightInf: 0, heavy: 0, siege: 0, spear: 0 };
+  for (const u of G.units) {
+    if (u.dead || u.owner !== enemyOf(ai) || !u.def.military) continue;
+    const d = u.def;
+    if (d.cls === 'cav') e.cav++; else if (d.cls === 'ranged') e.ranged++; else if (d.cls === 'siege') e.siege++; else if (!d.heavy) e.lightInf++;
+    if (d.heavy) e.heavy++;
+    if (u.type === 'spear') e.spear++;
+  }
+  const w = { spear: 1 + e.cav * 0.35, maa: 1 + e.ranged * 0.25 + e.lightInf * 0.2,
+    archer: 1 + e.lightInf * 0.35, crossbow: 0.7 + e.heavy * 0.45, handcannon: 0.9 + e.heavy * 0.2,
+    horseman: 0.8 + e.ranged * 0.35 + e.siege * 0.6, knight: 1 + e.ranged * 0.2 + e.lightInf * 0.15 - Math.min(0.6, e.spear * 0.1) };
+  // Wirtschaft hat Vorrang, solange wenig Dorfbewohner; beim Sparen fürs Zeitalter Nahrung und Gold zurückhalten
   const ecoFirst = vills < Math.min(ai.d.vills, 12) && t < 300;
   const reserve = { food: ecoFirst ? 50 : 0, wood: 0, gold: 0, stone: 0 };
+  if (ai.saving && !ai.threat) {
+    // anfangs nur teilweise zurückhalten, nach längerem Warten voll sparen
+    const plan = ai.d.ages[p.age], f = plan && t > plan[0] + 90 ? 1 : 0.6;
+    reserve.food += Math.floor(ai.saving.food * f); reserve.gold += ai.saving.gold;
+  }
   const canPay = cost => { for (const k in cost) if (p.res[k] - (reserve[k] || 0) < cost[k]) return false; return true; };
   if (p.pop >= p.popCap) return;
   // Belagerung
   if (ai.d.siege && t >= ai.d.siegeTime) {
     for (const ws of aiBlds(ai, 'siege')) {
       if (ws.queue.length >= 1) continue;
-      const wantRams = ai.diff === 'hard' ? 3 : 2, wantCats = ai.d.catapults ? 2 : 0;
+      const late = p.age >= 2;
+      const wantRams = (ai.diff === 'hard' ? 3 : 2) - (late && ai.diff === 'hard' ? 1 : 0), wantCats = ai.d.catapults && late ? 2 : 0;
+      const wantTreb = late && ai.diff !== 'easy' ? 1 : 0;
       if (cnt.ram < wantRams && canPay(UNITS.ram.cost)) { queueUnit(ws, 'ram'); cnt.ram++; }
+      else if (cnt.trebuchet < wantTreb && canPay(UNITS.trebuchet.cost)) { queueUnit(ws, 'trebuchet'); cnt.trebuchet++; }
       else if (cnt.catapult < wantCats && canPay(UNITS.catapult.cost)) { queueUnit(ws, 'catapult'); cnt.catapult++; }
     }
   }
-  const map = { barracks: 'spear', range: 'archer', stable: 'horseman' };
-  const blds = aiBlds(ai).filter(b => map[b.type]);
-  // Gebäude nach Bedarf sortieren
-  blds.sort((a, b) => (cnt[map[a.type]] / w[map[a.type]]) - (cnt[map[b.type]] / w[map[b.type]]));
-  for (const b of blds) {
-    if (b.queue.length >= ai.d.buildQueue) continue;
-    const ut = map[b.type];
-    if (canPay(UNITS[ut].cost)) { queueUnit(b, ut); cnt[ut]++; }
+  // je Gebäude die Einheit mit dem größten Bedarf (Anzahl / Gewicht), die schon verfügbar und bezahlbar ist
+  const pick = b => {
+    let best = null, bv = 1e9;
+    for (const ut of BUILDINGS[b.type].trains) {
+      if (UNITS[ut].age > p.age || !w[ut]) continue;
+      const v = cnt[ut] / Math.max(0.2, w[ut]);
+      if (v < bv && canPay(UNITS[ut].cost)) { bv = v; best = ut; }
+    }
+    return { ut: best, v: bv };
+  };
+  const blds = aiBlds(ai).filter(b => b.type === 'barracks' || b.type === 'range' || b.type === 'stable');
+  const picks = blds.map(b => ({ b, ...pick(b) })).filter(x => x.ut).sort((a, b) => a.v - b.v);
+  for (const { b, ut } of picks) {
+    if (b.queue.length >= ai.d.buildQueue || !canPay(UNITS[ut].cost)) continue;
+    queueUnit(b, ut); cnt[ut]++;
   }
   // Sammelpunkt Militär: vor der Basis
   const tc = aiTC(ai);
@@ -2409,7 +2723,7 @@ function aiPickTarget(ai, from) {
   for (const b of G.buildings) {
     if (b.dead || b.owner !== enemyOf(ai) || BUILDINGS[b.type].wall) continue;
     let d = dist(from.x, from.y, b.x, b.y);
-    if (b.type === 'tc') d -= 6;
+    if (b.capital || BUILDINGS[b.type].landmark) d -= 6; // Wahrzeichen entscheiden das Spiel
     if (d < bd) { bd = d; best = b; }
   }
   if (!best) for (const u of G.units) { if (u.dead || u.owner !== enemyOf(ai)) continue; const d = dist(from.x, from.y, u.x, u.y); if (d < bd) { bd = d; best = u; } }
@@ -2727,8 +3041,9 @@ function logPile(c, x, y, n, rnd) { // Baumstämme, Stirnseiten zeigen nach link
 
 /* ---------- Gebäude-Grafiken ---------- */
 // Höhe (für Schatten) und Schornstein (für Rauch) je Gebäudetyp
-const BLD_HEIGHT = { tc: 78, house: 34, lumber: 26, mining: 26, mill: 46, farm: 0, barracks: 36, range: 34, stable: 34, siege: 36, tower: 92 };
-const CHIMNEYS = { house: [0.7, 0.75, 36], tc: [3.0, 1.0, 55], siege: [0.8, 0.6, 38] };
+const BLD_HEIGHT = { tc: 78, house: 34, lumber: 26, mining: 26, mill: 46, farm: 0, barracks: 36, range: 34, stable: 34, siege: 36, tower: 92,
+  blacksmith: 34, market: 30, keep: 96, lm_market: 52, lm_school: 50, lm_treasury: 56, lm_fort: 76, lm_cathedral: 104, lm_academy: 70 };
+const CHIMNEYS = { house: [0.7, 0.75, 36], tc: [3.0, 1.0, 55], siege: [0.8, 0.6, 38], blacksmith: [0.6, 0.6, 41] };
 
 function drawBuildingShape(c, type, owner, w, h, opt) {
   opt = opt || {};
@@ -2898,6 +3213,186 @@ function drawBuildingShape(c, type, owner, w, h, opt) {
       flag(c, 1.0, 1.0, 80, 13, pc);
       break;
     }
+    case 'blacksmith': {
+      ground(c, w, h, '#8a7a62', rnd);
+      solid(c, 0.3, 0.3, 1.5, 1.35, 0, 7, 'stone', rnd);
+      solid(c, 0.3, 0.3, 1.5, 1.35, 7, 17, 'plaster', rnd);
+      const L = faceFn(0.3, 1.35, 1.5, 1.35, 0, 17);
+      doorF(c, L, 0.62, 0.24, 0.62, true); windowF(c, faceFn(1.5, 1.35, 1.5, 0.3, 0, 17), 0.5, 0.62, 0.18, 0.24, true);
+      gableRoof(c, 0.3, 0.3, 1.5, 1.35, 17, 12, shade(rc, 0.8), true);
+      // Esse mit Glut
+      solid(c, 0.45, 0.45, 0.75, 0.75, 17, 40, 'stone', rnd, { top: '#3a3430' });
+      const e = P(1.35, 1.62, 0); c.fillStyle = '#ff8a2a'; c.beginPath(); c.ellipse(e[0], e[1] - 3, 3, 1.6, 0, 0, Math.PI * 2); c.fill();
+      // Amboss auf Holzklotz
+      box(c, 1.62, 1.45, 1.86, 1.69, 0, 5, '#6a4626');
+      const a = P(1.74, 1.57, 5);
+      c.fillStyle = '#3c3f45'; c.beginPath(); c.moveTo(a[0] - 6, a[1] - 4); c.lineTo(a[0] + 4, a[1] - 4); c.quadraticCurveTo(a[0] + 8, a[1] - 3.5, a[0] + 9, a[1] - 1.5); c.lineTo(a[0] + 3, a[1] - 1.5); c.lineTo(a[0] + 2, a[1]); c.lineTo(a[0] - 3, a[1]); c.lineTo(a[0] - 4, a[1] - 1.5); c.lineTo(a[0] - 6, a[1] - 1.5); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(a[0] - 5.5, a[1] - 4.2, 9, 0.9);
+      barrel(c, 0.45, 1.75);
+      flag(c, 1.5, 1.35, 17, 12, pc);
+      break;
+    }
+    case 'market': {
+      ground(c, w, h, '#b5a27c', rnd);
+      solid(c, 0.3, 0.3, 2.7, 1.05, 0, 16, 'plaster', rnd);
+      doorF(c, faceFn(0.3, 1.05, 2.7, 1.05, 0, 16), 0.5, 0.1, 0.62, true);
+      windowF(c, faceFn(0.3, 1.05, 2.7, 1.05, 0, 16), 0.2, 0.6, 0.06, 0.26, true); windowF(c, faceFn(0.3, 1.05, 2.7, 1.05, 0, 16), 0.8, 0.6, 0.06, 0.26, true);
+      gableRoof(c, 0.3, 0.3, 2.7, 1.05, 16, 11, rc, true);
+      // Marktstände mit gestreiften Dächern
+      const stall = (x0, y0, col, goods) => {
+        box(c, x0, y0, x0 + 0.75, y0 + 0.5, 0, 6, '#7a5530');
+        for (const [gx, gy] of [[0.15, 0.15], [0.4, 0.2], [0.6, 0.12]]) { const q = P(x0 + gx, y0 + gy, 6); c.fillStyle = goods; c.beginPath(); c.arc(q[0], q[1] - 1, 1.6, 0, Math.PI * 2); c.fill(); }
+        c.strokeStyle = '#4a3018'; c.lineWidth = 1; c.beginPath();
+        for (const [px, py] of [[x0, y0 + 0.5], [x0 + 0.75, y0 + 0.5], [x0 + 0.75, y0]]) { const b0 = P(px, py, 0), b1 = P(px, py, 13); c.moveTo(b0[0], b0[1]); c.lineTo(b1[0], b1[1]); }
+        c.stroke();
+        const A1 = P(x0 - 0.08, y0 - 0.05, 15), B1 = P(x0 + 0.83, y0 - 0.05, 15), C1 = P(x0 + 0.83, y0 + 0.62, 11), D1 = P(x0 - 0.08, y0 + 0.62, 11);
+        poly(c, [A1, B1, C1, D1], col, 'rgba(30,20,10,.5)', 0.6);
+        c.fillStyle = 'rgba(255,248,230,.85)';
+        for (let k = 1; k < 6; k += 2) { const t0 = k / 6, t1 = (k + 1) / 6; poly(c, [lerp2(A1, B1, t0), lerp2(A1, B1, t1), lerp2(D1, C1, t1), lerp2(D1, C1, t0)], 'rgba(255,248,230,.8)'); }
+      };
+      stall(0.35, 1.55, pc, '#d84a3a'); stall(1.85, 1.35, '#c99a2e', '#f0d060'); stall(1.1, 2.25, pc, '#7aa83a');
+      barrel(c, 2.75, 2.2); barrel(c, 2.6, 2.55);
+      box(c, 0.3, 2.45, 0.6, 2.75, 0, 4, '#8a6a3a'); box(c, 0.35, 2.5, 0.55, 2.7, 4, 7, '#9a7a48');
+      flag(c, 2.7, 1.05, 16, 14, pc);
+      break;
+    }
+    case 'keep': {
+      ground(c, w, h, '#8f8878', rnd);
+      solid(c, 0.25, 0.25, 2.75, 2.75, 0, 9, 'stone', rnd, { top: '#8a8376' });
+      for (let k = 0; k < 6; k++) { box(c, 0.25 + k * 0.45, 2.55, 0.45 + k * 0.45, 2.75, 9, 13, STONE); box(c, 2.55, 0.25 + k * 0.45, 2.75, 0.45 + k * 0.45, 9, 13, STONE); }
+      solid(c, 0.7, 0.7, 2.3, 2.3, 9, 66, 'stone', rnd);
+      const L = faceFn(0.7, 2.3, 2.3, 2.3, 9, 66), R = faceFn(2.3, 2.3, 2.3, 0.7, 9, 66);
+      for (const v of [0.35, 0.6, 0.82]) for (const u of [0.3, 0.7]) { quadF(c, L, u - 0.03, v - 0.05, u + 0.03, v + 0.05, '#1e1a16'); quadF(c, R, u - 0.03, v - 0.05, u + 0.03, v + 0.05, '#1e1a16'); }
+      doorF(c, faceFn(0.7, 2.3, 2.3, 2.3, 9, 30), 0.5, 0.2, 0.55, true);
+      solid(c, 0.55, 0.55, 2.45, 2.45, 66, 72, 'stone', rnd, { top: '#8a8376' });
+      for (let k = 0; k < 5; k++) { box(c, 0.55 + k * 0.4, 2.23, 0.77 + k * 0.4, 2.45, 72, 78, STONE); box(c, 2.23, 0.55 + k * 0.4, 2.45, 0.77 + k * 0.4, 72, 78, STONE); }
+      pyramidRoof(c, 0.85, 0.85, 2.15, 2.15, 73, 20, rc);
+      flag(c, 1.5, 1.5, 93, 14, pc);
+      break;
+    }
+    case 'lm_market': { // Marktkreuz: offene Markthalle mit Steinkreuz davor
+      ground(c, w, h, '#c2b08a', rnd);
+      for (let k = 0; k < 9; k++) { const q = P(0.3 + rnd() * 2.4, 0.3 + rnd() * 2.4); c.fillStyle = 'rgba(90,70,40,.12)'; c.fillRect(q[0] - 5, q[1] - 1, 10, 2); }
+      // Hallenstützen hinten, Dach, Stützen vorn
+      const posts = [[0.35, 0.35], [1.5, 0.35], [2.65, 0.35], [0.35, 1.6], [2.65, 1.6], [1.5, 1.6]];
+      for (const [x, y] of posts.slice(0, 3)) box(c, x - 0.07, y - 0.07, x + 0.07, y + 0.07, 0, 18, '#7a5530');
+      box(c, 0.6, 0.6, 1.2, 1.1, 0, 5, '#8a6a3a'); box(c, 1.8, 0.6, 2.4, 1.1, 0, 5, '#8a6a3a');
+      for (const [x, y] of posts.slice(3)) box(c, x - 0.07, y - 0.07, x + 0.07, y + 0.07, 0, 18, '#7a5530');
+      gableRoof(c, 0.25, 0.25, 2.75, 1.7, 18, 16, rc, true, WOOD);
+      // Stufen, Säule, Kreuz
+      box(c, 1.0, 1.95, 2.0, 2.85, 0, 3, '#b0a898'); box(c, 1.15, 2.1, 1.85, 2.7, 3, 6, '#a8a090'); box(c, 1.3, 2.25, 1.7, 2.55, 6, 9, '#a09888');
+      box(c, 1.45, 2.35, 1.55, 2.45, 9, 44, '#b4ac9c');
+      const t = P(1.5, 2.4, 44); c.fillStyle = '#c4bcac'; c.strokeStyle = 'rgba(40,30,20,.6)'; c.lineWidth = 0.6;
+      c.fillRect(t[0] - 1.6, t[1] - 10, 3.2, 10); c.strokeRect(t[0] - 1.6, t[1] - 10, 3.2, 10); c.fillRect(t[0] - 5, t[1] - 7.5, 10, 2.6); c.strokeRect(t[0] - 5, t[1] - 7.5, 10, 2.6);
+      flag(c, 2.75, 1.7, 18, 16, pc); flag(c, 0.25, 1.7, 18, 16, pc);
+      break;
+    }
+    case 'lm_school': { // Kriegsschule: Steinhalle mit Übungsplatz
+      ground(c, w, h, '#a99470', rnd);
+      solid(c, 0.3, 0.3, 2.7, 1.5, 0, 10, 'stone', rnd);
+      solid(c, 0.3, 0.3, 2.7, 1.5, 10, 30, 'plaster', rnd);
+      const L = faceFn(0.3, 1.5, 2.7, 1.5, 0, 30);
+      doorF(c, faceFn(0.3, 1.5, 2.7, 1.5, 0, 18), 0.5, 0.12, 0.85, true);
+      for (const u of [0.15, 0.32, 0.68, 0.85]) windowF(c, L, u, 0.66, 0.05, 0.2, true);
+      windowF(c, faceFn(2.7, 1.5, 2.7, 0.3, 0, 30), 0.5, 0.66, 0.14, 0.2, true);
+      gableRoof(c, 0.3, 0.3, 2.7, 1.5, 30, 16, rc, true);
+      // Ecktürmchen
+      solid(c, 2.35, 1.15, 2.95, 1.75, 0, 46, 'stone', rnd); pyramidRoof(c, 2.3, 1.1, 3.0, 1.8, 46, 14, rc);
+      // Übungspuppen und Waffenständer
+      for (const x of [0.7, 1.4]) {
+        const q = P(x, 2.35, 0); c.strokeStyle = '#5a3d20'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(q[0], q[1]); c.lineTo(q[0], q[1] - 15); c.moveTo(q[0] - 5, q[1] - 11); c.lineTo(q[0] + 5, q[1] - 11); c.stroke();
+        c.fillStyle = '#d8b850'; c.beginPath(); c.ellipse(q[0], q[1] - 9, 3, 4.5, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(q[0], q[1] - 16, 2.4, 0, Math.PI * 2); c.fill();
+      }
+      box(c, 1.9, 2.4, 2.6, 2.55, 0, 3, '#5a3d20');
+      c.strokeStyle = '#4a3420'; c.lineWidth = 1.1; for (let k = 0; k < 4; k++) { const a0 = P(2.0 + k * 0.17, 2.47, 2), a1 = P(2.0 + k * 0.17, 2.47, 20); c.beginPath(); c.moveTo(a0[0], a0[1]); c.lineTo(a1[0], a1[1]); c.stroke(); }
+      flag(c, 0.3, 1.5, 30, 16, pc); flag(c, 2.65, 1.45, 60, 14, pc);
+      break;
+    }
+    case 'lm_treasury': { // Schatzkammer: Steinbau mit Säulenhalle und Goldkisten
+      ground(c, w, h, '#b0a080', rnd);
+      solid(c, 0.35, 0.35, 2.65, 1.9, 0, 30, 'stone', rnd);
+      const R = faceFn(2.65, 1.9, 2.65, 0.35, 0, 30);
+      for (const u of [0.25, 0.5, 0.75]) windowF(c, R, u, 0.62, 0.08, 0.24);
+      pyramidRoof(c, 0.25, 0.25, 2.75, 2.0, 30, 22, mix('#c39a2c', pc, 0.12));
+      // Säulenvorhalle
+      box(c, 0.35, 1.9, 2.65, 2.15, 0, 3, '#c8c0b0');
+      for (let k = 0; k < 5; k++) box(c, 0.45 + k * 0.5, 1.98, 0.6 + k * 0.5, 2.1, 3, 24, '#d8d0c0');
+      box(c, 0.35, 1.9, 2.65, 2.15, 24, 28, '#c8c0b0');
+      poly(c, [P(0.35, 2.15, 28), P(2.65, 2.15, 28), P(1.5, 2.15, 38)], '#d0c8b8', 'rgba(40,30,20,.5)', 0.6);
+      for (const [x, y] of [[0.6, 2.55], [1.1, 2.6], [2.3, 2.5]]) {
+        box(c, x - 0.15, y - 0.12, x + 0.15, y + 0.12, 0, 5, '#6a4626');
+        const q = P(x, y, 5); c.fillStyle = '#f2c230'; c.beginPath(); c.ellipse(q[0], q[1] - 1, 4, 2, 0, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff2a0'; c.fillRect(q[0] - 1.5, q[1] - 2, 1.4, 1);
+      }
+      flag(c, 1.5, 1.1, 52, 16, pc);
+      break;
+    }
+    case 'lm_fort': { // Wehrburg: Ringmauer, vier Ecktürme, Bergfried
+      ground(c, w, h, '#8f8878', rnd);
+      const tower = (x, y, top) => {
+        solid(c, x, y, x + 0.8, y + 0.8, 0, top, 'stone', rnd, { top: '#8a8376' });
+        for (const [dx, dy] of [[0, 0.62], [0.31, 0.62], [0.62, 0.62], [0.62, 0], [0.62, 0.31]]) box(c, x + dx, y + dy, x + dx + 0.18, y + dy + 0.18, top, top + 5, STONE);
+        pyramidRoof(c, x + 0.08, y + 0.08, x + 0.72, y + 0.72, top + 2, 14, rc);
+      };
+      tower(0.15, 0.15, 34);
+      solid(c, 0.4, 0.4, 3.6, 3.6, 0, 20, 'stone', rnd, { top: '#7d7466' });
+      solid(c, 1.3, 1.3, 2.7, 2.7, 20, 58, 'stone', rnd);
+      const KL = faceFn(1.3, 2.7, 2.7, 2.7, 20, 58), KR = faceFn(2.7, 2.7, 2.7, 1.3, 20, 58);
+      for (const u of [0.3, 0.7]) { windowF(c, KL, u, 0.6, 0.06, 0.18); windowF(c, KR, u, 0.6, 0.06, 0.18); }
+      solid(c, 1.2, 1.2, 2.8, 2.8, 58, 63, 'stone', rnd, { top: '#8a8376' });
+      for (let k = 0; k < 4; k++) { box(c, 1.2 + k * 0.42, 2.6, 1.38 + k * 0.42, 2.8, 63, 68, STONE); box(c, 2.6, 1.2 + k * 0.42, 2.8, 1.38 + k * 0.42, 63, 68, STONE); }
+      pyramidRoof(c, 1.4, 1.4, 2.6, 2.6, 64, 18, rc);
+      for (let k = 0; k < 8; k++) { box(c, 0.4 + k * 0.4, 3.42, 0.58 + k * 0.4, 3.6, 20, 25, STONE); box(c, 3.42, 0.4 + k * 0.4, 3.6, 0.58 + k * 0.4, 20, 25, STONE); }
+      doorF(c, faceFn(0.4, 3.6, 3.6, 3.6, 0, 20), 0.5, 0.12, 0.7, true);
+      tower(0.15, 3.05, 34); tower(3.05, 0.15, 34); tower(3.05, 3.05, 34);
+      flag(c, 2.0, 2.0, 82, 16, pc);
+      break;
+    }
+    case 'lm_cathedral': { // Dom: Langhaus mit Doppelturmfassade
+      ground(c, w, h, '#b8aa8a', rnd);
+      solid(c, 0.9, 0.35, 3.1, 2.9, 0, 34, 'stone', rnd);
+      const R = faceFn(3.1, 2.9, 3.1, 0.35, 0, 34);
+      for (const u of [0.15, 0.38, 0.62, 0.85]) { windowF(c, R, u, 0.6, 0.05, 0.42); }
+      gableRoof(c, 0.9, 0.35, 3.1, 2.9, 34, 22, shade(rc, 0.75), false, STONE);
+      // Fassade mit Rosette
+      const F = faceFn(0.9, 2.9, 3.1, 2.9, 0, 34);
+      doorF(c, F, 0.5, 0.16, 0.55, true);
+      const ro = F(0.5, 0.8); c.fillStyle = '#2a323c'; c.beginPath(); c.arc(ro[0], ro[1], 5.5, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#c9a227'; c.lineWidth = 0.8; c.stroke(); c.beginPath(); for (let k = 0; k < 6; k++) { const an = k * Math.PI / 3; c.moveTo(ro[0], ro[1]); c.lineTo(ro[0] + Math.cos(an) * 5.5, ro[1] + Math.sin(an) * 5.5); } c.stroke();
+      for (const x of [0.4, 2.85]) {
+        solid(c, x, 2.85, x + 0.75, 3.6, 0, 70, 'stone', rnd);
+        const TL = faceFn(x, 3.6, x + 0.75, 3.6, 0, 70);
+        windowF(c, TL, 0.5, 0.55, 0.22, 0.14); windowF(c, TL, 0.5, 0.8, 0.22, 0.1);
+        solid(c, x - 0.05, 2.8, x + 0.8, 3.65, 70, 74, 'stone', rnd, { top: '#8a8376' });
+        pyramidRoof(c, x + 0.02, 2.87, x + 0.73, 3.58, 74, 34, shade(rc, 0.75));
+      }
+      const cr = P(2.0, 1.6, 58); c.strokeStyle = '#c9a227'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(cr[0], cr[1]); c.lineTo(cr[0], cr[1] - 10); c.moveTo(cr[0] - 3, cr[1] - 7); c.lineTo(cr[0] + 3, cr[1] - 7); c.stroke();
+      flag(c, 3.22, 3.22, 108, 12, pc);
+      break;
+    }
+    case 'lm_academy': { // Kriegsakademie: Hauptbau, Flügel, Wachturm, Geschütz im Hof
+      ground(c, w, h, '#a49274', rnd);
+      solid(c, 0.35, 0.35, 3.65, 1.55, 0, 12, 'stone', rnd);
+      solid(c, 0.35, 0.35, 3.65, 1.55, 12, 32, 'plaster', rnd);
+      const L = faceFn(0.35, 1.55, 3.65, 1.55, 0, 32);
+      for (const u of [0.1, 0.22, 0.34, 0.66, 0.78, 0.9]) windowF(c, L, u, 0.7, 0.03, 0.18, true);
+      doorF(c, faceFn(0.35, 1.55, 3.65, 1.55, 0, 20), 0.5, 0.08, 0.8, true);
+      gableRoof(c, 0.35, 0.35, 3.65, 1.55, 32, 16, rc, true);
+      solid(c, 2.45, 1.55, 3.65, 3.65, 0, 26, 'plaster', rnd);
+      const WR = faceFn(3.65, 3.65, 3.65, 1.55, 0, 26);
+      for (const u of [0.2, 0.5, 0.8]) windowF(c, WR, u, 0.6, 0.06, 0.24, true);
+      gableRoof(c, 2.45, 1.55, 3.65, 3.65, 26, 14, rc, false);
+      // Geschütz im Hof
+      const g = P(1.3, 2.6, 0);
+      for (const dx of [-5, 5]) { c.fillStyle = '#3a2614'; c.beginPath(); c.arc(g[0] + dx, g[1] - 3, 3, 0, Math.PI * 2); c.fill(); }
+      c.strokeStyle = '#2c2e32'; c.lineWidth = 3.4; c.beginPath(); c.moveTo(g[0] - 7, g[1] - 5); c.lineTo(g[0] + 9, g[1] - 9); c.stroke();
+      // Wachturm vorne links
+      solid(c, 0.35, 2.85, 1.05, 3.55, 0, 52, 'stone', rnd);
+      solid(c, 0.27, 2.77, 1.13, 3.63, 52, 57, 'stone', rnd, { top: '#8a8376' });
+      for (const [dx, dy] of [[0, 0.68], [0.34, 0.68], [0.68, 0.68], [0.68, 0], [0.68, 0.34]]) box(c, 0.27 + dx, 2.77 + dy, 0.45 + dx, 2.95 + dy, 57, 62, STONE);
+      pyramidRoof(c, 0.4, 2.9, 1.0, 3.5, 58, 16, rc);
+      flag(c, 0.7, 3.2, 76, 14, pc); flag(c, 3.65, 1.55, 26, 14, pc);
+      break;
+    }
   }
 }
 function drawMillSails(c, hub, sc, ang) {
@@ -2920,7 +3415,7 @@ const SPRITES = {};
 function buildingSprite(type, owner, icon) {
   const key = type + owner + (icon ? 'i' : '');
   if (SPRITES[key]) return SPRITES[key];
-  const d = BUILDINGS[type]; const top = 120;
+  const d = BUILDINGS[type]; const top = Math.max(120, (BLD_HEIGHT[type] || 0) + 44);
   const wpx = (d.w + d.h) * HALF_W, hpx = (d.w + d.h) * HALF_H + top;
   const cv = document.createElement('canvas'); cv.width = Math.ceil(wpx * SPR_S) + 8; cv.height = Math.ceil(hpx * SPR_S) + 4;
   const c = cv.getContext('2d');
@@ -3373,32 +3868,117 @@ function drawUnitShape(c, u, sx, sy, z, owner, type, facing, anim, moving, atk, 
       if (atk > 0) { c.strokeStyle = '#3a2a19'; c.lineWidth = 0.9; c.beginPath(); c.moveTo(4 - pull, -14 - bob); c.lineTo(13, -14 - bob); c.stroke(); }
       break;
     }
-    case 'horseman': {
+    case 'horseman': case 'scout': case 'knight': {
+      const kn = type === 'knight', sc = type === 'scout';
+      const horse = kn ? '#5e4a3a' : sc ? '#9a6a3c' : '#7a4e2c';
       const gal = moving ? Math.sin(ph * 1.2) : 0, hb = moving ? Math.abs(gal) * 1.2 : 0;
       c.strokeStyle = '#4a2f1a'; c.lineWidth = 2.2;
       c.beginPath(); c.moveTo(-8, -8 - hb); c.lineTo(-8 - gal * 3.5, -0.6); c.moveTo(-5, -8 - hb); c.lineTo(-5 + gal * 3, -0.6);
       c.moveTo(6, -8 - hb); c.lineTo(6 + gal * 3.5, -0.6); c.moveTo(9, -8 - hb); c.lineTo(9 - gal * 3, -0.6); c.stroke();
       c.fillStyle = '#2a1a0c'; for (const x of [-8 - gal * 3.5, -5 + gal * 3, 6 + gal * 3.5, 9 - gal * 3]) c.fillRect(x - 1.2, -1.4, 2.4, 1.4);
       c.fillStyle = '#3a2412'; c.beginPath(); c.moveTo(-10.5, -12 - hb); c.quadraticCurveTo(-15, -9 - hb, -14, -3 - hb); c.quadraticCurveTo(-12, -8 - hb, -10, -9 - hb); c.fill();
-      c.fillStyle = '#7a4e2c'; c.beginPath(); c.ellipse(0.5, -10.5 - hb, 11.5, 5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = horse; c.beginPath(); c.ellipse(0.5, -10.5 - hb, 11.5, 5, 0, 0, Math.PI * 2); c.fill();
       c.fillStyle = 'rgba(255,220,170,.15)'; c.beginPath(); c.ellipse(-1, -12.5 - hb, 8, 2, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#7a4e2c'; c.beginPath(); c.moveTo(8, -13 - hb); c.lineTo(13.5, -22 - hb); c.quadraticCurveTo(17, -23 - hb, 18.5, -19.5 - hb); c.lineTo(14, -16.5 - hb); c.lineTo(11.5, -8.5 - hb); c.closePath(); c.fill();
+      c.fillStyle = horse; c.beginPath(); c.moveTo(8, -13 - hb); c.lineTo(13.5, -22 - hb); c.quadraticCurveTo(17, -23 - hb, 18.5, -19.5 - hb); c.lineTo(14, -16.5 - hb); c.lineTo(11.5, -8.5 - hb); c.closePath(); c.fill();
       c.strokeStyle = OL; c.lineWidth = 0.6; c.stroke();
       c.fillStyle = '#3a2412'; c.beginPath(); c.moveTo(8.5, -13.5 - hb); c.lineTo(13, -22.5 - hb); c.lineTo(11.5, -21 - hb); c.lineTo(7.5, -13 - hb); c.fill();
       c.fillRect(14.2, -24.5 - hb, 1.2, 2.5); c.fillStyle = '#1a1008'; c.fillRect(16, -21 - hb, 0.9, 0.9);
-      // Satteldecke
-      c.fillStyle = pc.main; c.beginPath(); c.moveTo(-5, -14.5 - hb); c.lineTo(5, -14.5 - hb); c.lineTo(5.5, -8.5 - hb); c.lineTo(-5.5, -8.5 - hb); c.closePath(); c.fill();
-      c.strokeStyle = '#d9b75a'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(-5.5, -9 - hb); c.lineTo(5.5, -9 - hb); c.stroke();
+      if (kn) { // Pferdedecke in Spielerfarbe und Stirnpanzer
+        c.fillStyle = pc.main; c.beginPath(); c.moveTo(-11.5, -14 - hb); c.lineTo(9.5, -14 - hb); c.lineTo(10, -5.5 - hb);
+        for (let k = 0; k <= 6; k++) c.lineTo(10 - k * 3.6, -5.5 - hb + (k % 2 ? 1.6 : 0));
+        c.closePath(); c.fill(); c.strokeStyle = '#d9b75a'; c.lineWidth = 0.8; c.stroke();
+        c.fillStyle = '#d9b75a'; c.beginPath(); c.arc(-1, -10 - hb, 1.6, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#a4acb6'; c.beginPath(); c.moveTo(13.5, -22 - hb); c.quadraticCurveTo(17, -23 - hb, 18.5, -19.5 - hb); c.lineTo(15.5, -18 - hb); c.closePath(); c.fill();
+      } else {
+        // Satteldecke
+        c.fillStyle = sc ? pc.dark : pc.main; c.beginPath(); c.moveTo(-5, -14.5 - hb); c.lineTo(5, -14.5 - hb); c.lineTo(5.5, -8.5 - hb); c.lineTo(-5.5, -8.5 - hb); c.closePath(); c.fill();
+        c.strokeStyle = '#d9b75a'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(-5.5, -9 - hb); c.lineTo(5.5, -9 - hb); c.stroke();
+      }
       // Reiter
-      c.fillStyle = pc.main; c.beginPath(); c.moveTo(-3, -14 - hb); c.lineTo(3, -14 - hb); c.lineTo(2.6, -23 - hb); c.lineTo(-2.6, -23 - hb); c.closePath(); c.fill();
+      const body = kn ? '#a4acb6' : sc ? mix(pc.main, '#7a5a34', 0.55) : pc.main;
+      c.fillStyle = body; c.beginPath(); c.moveTo(-3, -14 - hb); c.lineTo(3, -14 - hb); c.lineTo(2.6, -23 - hb); c.lineTo(-2.6, -23 - hb); c.closePath(); c.fill();
       c.strokeStyle = OL; c.lineWidth = 0.5; c.stroke();
-      c.strokeStyle = '#4a3a2a'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, -14 - hb); c.lineTo(2, -9 - hb); c.stroke();
+      if (kn) { c.fillStyle = pc.main; c.fillRect(-1.6, -22.5 - hb, 3.2, 8.5); c.fillStyle = '#d9b75a'; c.fillRect(-1.6, -19 - hb, 3.2, 0.9); }
+      c.strokeStyle = kn ? '#7e868f' : '#4a3a2a'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, -14 - hb); c.lineTo(2, -9 - hb); c.stroke();
       c.fillStyle = skin; c.beginPath(); c.arc(0.3, -26 - hb, 3.1, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#9aa2ac'; c.beginPath(); c.arc(0.3, -26.8 - hb, 3.4, Math.PI, 0); c.fill(); c.fillRect(1.2, -27 - hb, 0.9, 3);
-      c.fillStyle = pc.light; c.beginPath(); c.moveTo(0.3, -30 - hb); c.quadraticCurveTo(-3, -33 - hb, -5, -30 - hb); c.quadraticCurveTo(-2, -31 - hb, 0.3, -29 - hb); c.fill();
+      if (kn) { // Topfhelm mit Sehschlitz
+        c.fillStyle = '#b4bcc6'; c.fillRect(-3, -30.5 - hb, 6.6, 7.2); c.strokeStyle = OL; c.lineWidth = 0.5; c.strokeRect(-3, -30.5 - hb, 6.6, 7.2);
+        c.fillStyle = '#1a1a20'; c.fillRect(0.6, -28 - hb, 3, 0.9);
+        c.fillStyle = pc.light; c.beginPath(); c.moveTo(0.3, -30.5 - hb); c.quadraticCurveTo(-3, -35 - hb, -6, -31 - hb); c.quadraticCurveTo(-2, -32 - hb, 0.3, -29.5 - hb); c.fill();
+      } else if (sc) { // Kapuze
+        c.fillStyle = shade(body, 0.8); c.beginPath(); c.arc(0, -26.4 - hb, 3.5, Math.PI * 0.95, Math.PI * 0.05); c.lineTo(-3.4, -24 - hb); c.closePath(); c.fill();
+      } else {
+        c.fillStyle = '#9aa2ac'; c.beginPath(); c.arc(0.3, -26.8 - hb, 3.4, Math.PI, 0); c.fill(); c.fillRect(1.2, -27 - hb, 0.9, 3);
+        c.fillStyle = pc.light; c.beginPath(); c.moveTo(0.3, -30 - hb); c.quadraticCurveTo(-3, -33 - hb, -5, -30 - hb); c.quadraticCurveTo(-2, -31 - hb, 0.3, -29 - hb); c.fill();
+      }
+      if (kn) { // Lanze, beim Angriff nach vorn gestoßen
+        const ls = swing * 4;
+        c.strokeStyle = skin; c.lineWidth = 1.8; c.beginPath(); c.moveTo(2, -21 - hb); c.lineTo(5 + ls, -19 - hb); c.stroke();
+        c.strokeStyle = '#6b4a2b'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(-6 + ls, -17 - hb); c.lineTo(24 + ls, -24 - hb); c.stroke();
+        c.fillStyle = '#e2e5ea'; c.beginPath(); c.moveTo(27 + ls, -24.8 - hb); c.lineTo(23 + ls, -25.5 - hb); c.lineTo(23.6 + ls, -22.8 - hb); c.closePath(); c.fill();
+        break;
+      }
       const sa = -1.0 + swing * 1.6;
       c.strokeStyle = skin; c.lineWidth = 1.8; c.beginPath(); c.moveTo(2, -21 - hb); c.lineTo(2 + Math.cos(sa) * 4, -21 - hb + Math.sin(sa) * 4); c.stroke();
-      c.strokeStyle = '#dfe3e8'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(2 + Math.cos(sa) * 4, -21 - hb + Math.sin(sa) * 4); c.lineTo(2 + Math.cos(sa) * 14, -21 - hb + Math.sin(sa) * 14); c.stroke();
+      c.strokeStyle = sc ? '#6b4a2b' : '#dfe3e8'; c.lineWidth = sc ? 1.2 : 1.5; c.beginPath(); c.moveTo(2 + Math.cos(sa) * 4, -21 - hb + Math.sin(sa) * 4); c.lineTo(2 + Math.cos(sa) * (sc ? 11 : 14), -21 - hb + Math.sin(sa) * (sc ? 11 : 14)); c.stroke();
+      break;
+    }
+    case 'maa': { // Waffenknecht: Kettenhemd, Wappenrock, Helm mit Nasenschutz, Schwert und Langschild
+      const armor = '#8e959e';
+      human(armor, '#55504a', b => {
+        c.fillStyle = '#a7aeb7'; c.beginPath(); c.arc(0.4, -20.6 + b, 3.9, Math.PI, 0); c.lineTo(4.3, -18 + b); c.lineTo(-3.5, -18 + b); c.closePath(); c.fill();
+        c.fillStyle = '#1a1a20'; c.fillRect(1.2, -20.2 + b, 3, 0.9);
+        c.strokeStyle = 'rgba(20,20,30,.6)'; c.lineWidth = 0.5; c.beginPath(); c.arc(0.4, -20.6 + b, 3.9, Math.PI, 0); c.stroke();
+      });
+      c.fillStyle = pc.main; c.beginPath(); c.moveTo(-2.4, -16.2 - bob); c.lineTo(2.4, -16.2 - bob); c.lineTo(2.8, -8 - bob); c.lineTo(-2.8, -8 - bob); c.closePath(); c.fill();
+      c.fillStyle = '#d9b75a'; c.fillRect(-0.5, -15 - bob, 1, 6);
+      const sa = -1.2 + swing * 1.9;
+      c.strokeStyle = '#a7aeb7'; c.lineWidth = 1.9; c.beginPath(); c.moveTo(2.4, -15.2 - bob); c.lineTo(2.4 + Math.cos(sa) * 4, -13 - bob + Math.sin(sa) * 4); c.stroke();
+      c.strokeStyle = '#e2e5ea'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(2.4 + Math.cos(sa) * 4, -13 - bob + Math.sin(sa) * 4); c.lineTo(2.4 + Math.cos(sa) * 13, -13 - bob + Math.sin(sa) * 13); c.stroke();
+      c.strokeStyle = '#d9b75a'; c.lineWidth = 1; c.beginPath(); const hx = 2.4 + Math.cos(sa) * 4.5, hy = -13 - bob + Math.sin(sa) * 4.5; c.moveTo(hx - Math.sin(sa) * 2, hy + Math.cos(sa) * 2); c.lineTo(hx + Math.sin(sa) * 2, hy - Math.cos(sa) * 2); c.stroke();
+      // Langschild
+      c.fillStyle = pc.main; c.beginPath(); c.moveTo(-7.5, -18 - bob); c.lineTo(-1.5, -18 - bob); c.lineTo(-1.8, -10 - bob); c.lineTo(-4.5, -5.5 - bob); c.lineTo(-7.2, -10 - bob); c.closePath(); c.fill();
+      c.strokeStyle = '#d9b75a'; c.lineWidth = 0.9; c.stroke();
+      c.strokeStyle = pc.light; c.lineWidth = 1; c.beginPath(); c.moveTo(-4.5, -17 - bob); c.lineTo(-4.5, -7.5 - bob); c.moveTo(-7, -14 - bob); c.lineTo(-2, -14 - bob); c.stroke();
+      break;
+    }
+    case 'crossbow': case 'handcannon': { // Armbrustschütze / Handkanonier
+      const gun = type === 'handcannon';
+      const coat = gun ? shade(pc.main, 0.75) : mix(pc.main, '#8a6a42', 0.45);
+      human(coat, '#4a3a2a', b => {
+        if (gun) { c.fillStyle = '#2e2a26'; c.beginPath(); c.ellipse(0.4, -22.6 + b, 5.2, 1.5, 0, 0, Math.PI * 2); c.fill(); c.fillRect(-2.4, -26 + b, 5.6, 3.6); c.fillStyle = pc.light; c.fillRect(-2.4, -23.4 + b, 5.6, 0.9); }
+        else { c.fillStyle = '#9aa2ac'; c.beginPath(); c.ellipse(0.4, -22.2 + b, 5.6, 1.6, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(0.4, -22.4 + b, 3.2, Math.PI, 0); c.fill(); }
+      }, gun ? null : () => { c.fillStyle = '#6b4a2b'; c.save(); c.rotate(-0.25); c.fillRect(-3.5, -18 - bob, 2.6, 7); c.restore(); });
+      c.fillStyle = pc.main; c.fillRect(-4.1, -11.5 - bob, 8.2, 1.4);
+      arm(6, -13.5);
+      const kick = atk > 0 ? swing * 1.5 : 0;
+      if (gun) {
+        c.strokeStyle = '#2c2e32'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(-1 - kick, -12.5 - bob); c.lineTo(14 - kick, -15 - bob); c.stroke();
+        c.strokeStyle = '#6b4a2b'; c.lineWidth = 2; c.beginPath(); c.moveTo(-3 - kick, -12 - bob); c.lineTo(3 - kick, -13 - bob); c.stroke();
+        if (atk > 0.15) { c.fillStyle = 'rgba(255,190,80,.9)'; c.beginPath(); c.arc(16, -15.3 - bob, 2.2, 0, Math.PI * 2); c.fill(); c.fillStyle = 'rgba(220,220,215,.6)'; c.beginPath(); c.arc(19, -17 - bob, 3.2, 0, Math.PI * 2); c.fill(); }
+      } else {
+        c.strokeStyle = '#5a3d20'; c.lineWidth = 1.8; c.beginPath(); c.moveTo(0 - kick, -13 - bob); c.lineTo(11 - kick, -14.2 - bob); c.stroke();
+        c.strokeStyle = '#3a2a19'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(10 - kick, -19 - bob); c.quadraticCurveTo(12.5 - kick, -14 - bob, 10 - kick, -9.5 - bob); c.stroke();
+        c.strokeStyle = 'rgba(245,240,220,.85)'; c.lineWidth = 0.5; c.beginPath(); c.moveTo(10 - kick, -19 - bob); c.lineTo(atk > 0 ? 9 : 6, -14 - bob); c.lineTo(10 - kick, -9.5 - bob); c.stroke();
+      }
+      break;
+    }
+    case 'trebuchet': { // Tribok: Gestell, langer Wurfarm, Gegengewicht
+      for (const x of [-12, 11]) { c.fillStyle = '#3a2614'; c.beginPath(); c.arc(x, -3.5, 3.6, 0, Math.PI * 2); c.fill(); }
+      c.fillStyle = '#7a5530'; c.fillRect(-16, -9, 31, 5); c.strokeStyle = OL; c.lineWidth = 0.6; c.strokeRect(-16, -9, 31, 5);
+      c.fillStyle = pc.main; c.fillRect(-15, -9, 5, 3); c.fillRect(9, -9, 5, 3);
+      c.strokeStyle = '#5a3a1e'; c.lineWidth = 2.2; c.beginPath(); c.moveTo(-8, -9); c.lineTo(0, -33); c.lineTo(8, -9); c.moveTo(-4.5, -20); c.lineTo(4.5, -20); c.stroke();
+      const r = atk > 0 ? clamp((0.35 - atk) / 0.35, 0, 1) : 0;
+      const an = -0.55 + r * 2.0; // Arm: 0 = waagrecht nach rechts
+      c.save(); c.translate(0, -33); c.rotate(-an);
+      c.strokeStyle = '#4a2f1a'; c.lineWidth = 2.6; c.beginPath(); c.moveTo(-8, 0); c.lineTo(24, 0); c.stroke();
+      c.restore();
+      const cx = -8 * Math.cos(an), cy = -33 + 8 * Math.sin(an);
+      c.fillStyle = '#5a4128'; c.fillRect(cx - 4.5, cy, 9, 8); c.strokeStyle = OL; c.lineWidth = 0.6; c.strokeRect(cx - 4.5, cy, 9, 8);
+      c.fillStyle = '#8d877c'; c.beginPath(); c.arc(cx, cy + 3, 2, 0, Math.PI * 2); c.fill();
+      const tx = 24 * Math.cos(an), ty = -33 - 24 * Math.sin(an);
+      c.strokeStyle = 'rgba(60,40,20,.8)'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(tx, ty); c.lineTo(tx + 1, ty + 6); c.stroke();
+      if (!(u && u.cd > u.def.cd - 1.5)) { c.fillStyle = '#9a958c'; c.beginPath(); c.arc(tx + 1, ty + 7, 1.8, 0, Math.PI * 2); c.fill(); }
       break;
     }
     case 'ram': {
@@ -3450,7 +4030,7 @@ function unitSprite(u, task) {
   const mv = u.moving ? 1 + (((u.anim * 10 / (Math.PI / 4)) | 0) & 7) : 0;
   const sw = u.atkAnim > 0 ? 1 + Math.min(5, ((0.35 - u.atkAnim) / 0.35 * 6) | 0) : 0;
   const carry = u.carry > 0 ? u.carryType : '';
-  const loaded = u.type === 'catapult' && u.cd > u.def.cd - 1 ? 1 : 0;
+  const loaded = (u.type === 'catapult' && u.cd > u.def.cd - 1) || (u.type === 'trebuchet' && u.cd > u.def.cd - 1.5) ? 1 : 0;
   const key = 'u_' + u.type + u.owner + flip + mv + '_' + sw + (u.type === 'villager' ? task + carry : '') + loaded;
   let spr = SPRITES[key];
   if (spr) return spr;
@@ -3464,7 +4044,8 @@ function unitSprite(u, task) {
   SPRITES[key] = spr;
   return spr;
 }
-function unitHeight(type) { return type === 'horseman' ? 32 : type === 'ram' ? 25 : type === 'catapult' ? 26 : type === 'deer' ? 20 : 28; }
+const UNIT_H = { horseman: 32, scout: 31, knight: 34, ram: 25, catapult: 26, trebuchet: 38, deer: 20 };
+function unitHeight(type) { return UNIT_H[type] || 28; }
 
 /* ---------- Icons für die Befehlsleiste ---------- */
 const ICONS = {};
@@ -3498,6 +4079,55 @@ function makeIcons(owner) { // Symbole in der Farbe des eigenen Spielers
     drawUnitShape(c, null, 100, 150, 3, owner, type, 0, 0, false, 0, 0, null, 'build', true);
     ICONS[type] = fitIcon(src, 6);
   }
+  for (const kind of new Set(Object.values(TECHS).map(t => t.icon))) ICONS['t_' + kind] = techIcon(kind, PLAYER_COLORS[owner]);
+}
+// Symbole für Technologien: Pergamentscheibe mit einfachem Motiv
+function techIcon(kind, pc) {
+  const cv = document.createElement('canvas'); cv.width = 96; cv.height = 96; const c = cv.getContext('2d');
+  c.translate(48, 50); c.lineCap = 'round'; c.lineJoin = 'round';
+  const g = c.createRadialGradient(-10, -12, 6, 0, 0, 38); g.addColorStop(0, '#f6e8c4'); g.addColorStop(1, '#c8a86a');
+  c.fillStyle = g; c.beginPath(); c.arc(0, 0, 36, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#6b4a2b'; c.lineWidth = 3; c.stroke();
+  const steel = '#9aa2ac', wood = '#7a4e26', dark = '#3a2a19';
+  if (kind === 'sword') {
+    c.rotate(-Math.PI / 4); c.fillStyle = steel; c.strokeStyle = dark; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(-3.5, 8); c.lineTo(-3.5, -20); c.lineTo(0, -27); c.lineTo(3.5, -20); c.lineTo(3.5, 8); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#d9b75a'; c.fillRect(-11, 8, 22, 4); c.fillStyle = wood; c.fillRect(-2.5, 12, 5, 11); c.fillStyle = '#d9b75a'; c.beginPath(); c.arc(0, 25, 3.5, 0, Math.PI * 2); c.fill();
+  } else if (kind === 'arrow') {
+    c.rotate(-Math.PI / 4); c.strokeStyle = wood; c.lineWidth = 3.5; c.beginPath(); c.moveTo(0, 24); c.lineTo(0, -16); c.stroke();
+    c.fillStyle = steel; c.strokeStyle = dark; c.lineWidth = 1.2; c.beginPath(); c.moveTo(0, -28); c.lineTo(7, -14); c.lineTo(-7, -14); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#e8e2d0'; c.beginPath(); c.moveTo(0, 14); c.lineTo(-7, 24); c.lineTo(-7, 30); c.lineTo(0, 22); c.lineTo(7, 30); c.lineTo(7, 24); c.closePath(); c.fill();
+  } else if (kind === 'shield' || kind === 'shieldp') {
+    c.fillStyle = kind === 'shield' ? steel : '#9a6a3c'; c.strokeStyle = dark; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(-20, -22); c.lineTo(20, -22); c.lineTo(19, 0); c.quadraticCurveTo(14, 18, 0, 27); c.quadraticCurveTo(-14, 18, -19, 0); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = pc.main; c.beginPath(); c.moveTo(-5, -22); c.lineTo(5, -22); c.lineTo(5, 23); c.lineTo(0, 27); c.lineTo(-5, 23); c.closePath(); c.fill();
+    if (kind === 'shield') { c.fillStyle = 'rgba(255,255,255,.35)'; for (let y = -16; y < 14; y += 6) for (let x = -15; x < 16; x += 6) if (Math.abs(x) > 6) { c.beginPath(); c.arc(x, y, 1.5, 0, Math.PI * 2); c.fill(); } }
+    else { c.strokeStyle = '#e8d8b0'; c.lineWidth = 1.5; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(-15, -16); c.lineTo(15, -16); c.moveTo(-14, 0); c.lineTo(14, 0); c.stroke(); c.setLineDash([]); }
+  } else if (kind === 'wood') {
+    c.rotate(-Math.PI / 5); c.fillStyle = wood; c.fillRect(-3, -22, 6, 46);
+    c.fillStyle = steel; c.strokeStyle = dark; c.lineWidth = 1.5; c.beginPath(); c.moveTo(3, -22); c.quadraticCurveTo(22, -24, 20, -6); c.quadraticCurveTo(12, -12, 3, -10); c.closePath(); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(-3, -22); c.quadraticCurveTo(-22, -24, -20, -6); c.quadraticCurveTo(-12, -12, -3, -10); c.closePath(); c.fill(); c.stroke();
+  } else if (kind === 'pick') {
+    c.rotate(-Math.PI / 5); c.fillStyle = wood; c.fillRect(-3, -14, 6, 40);
+    c.strokeStyle = steel; c.lineWidth = 6; c.beginPath(); c.moveTo(-24, -6); c.quadraticCurveTo(0, -26, 24, -6); c.stroke();
+    c.fillStyle = '#f2c230'; c.beginPath(); c.arc(16, 18, 6, 0, Math.PI * 2); c.fill(); c.strokeStyle = dark; c.lineWidth = 1; c.stroke();
+  } else if (kind === 'food') {
+    c.strokeStyle = '#b8902a'; c.lineWidth = 3;
+    for (const dx of [-12, 0, 12]) {
+      c.beginPath(); c.moveTo(dx * 0.4, 26); c.quadraticCurveTo(dx * 0.6, 6, dx, -10); c.stroke();
+      c.fillStyle = '#e8c84a'; for (let k = 0; k < 4; k++) { c.beginPath(); c.ellipse(dx + (k % 2 ? 3 : -3), -12 - k * 4 + 14, 3, 5, k % 2 ? 0.5 : -0.5, 0, Math.PI * 2); c.fill(); }
+    }
+    c.fillStyle = '#4a7aa8'; c.beginPath(); c.moveTo(-24, 22); c.quadraticCurveTo(0, 14, 24, 22); c.lineTo(24, 28); c.quadraticCurveTo(0, 20, -24, 28); c.closePath(); c.fill();
+  } else if (kind === 'wheel') {
+    c.strokeStyle = wood; c.lineWidth = 5; c.beginPath(); c.arc(-4, 8, 16, 0, Math.PI * 2); c.stroke();
+    c.lineWidth = 2.5; for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; c.beginPath(); c.moveTo(-4 - Math.cos(a) * 16, 8 - Math.sin(a) * 16); c.lineTo(-4 + Math.cos(a) * 16, 8 + Math.sin(a) * 16); c.stroke(); }
+    c.fillStyle = '#9a6a3c'; c.fillRect(-14, -22, 28, 14); c.strokeStyle = dark; c.lineWidth = 1.5; c.strokeRect(-14, -22, 28, 14);
+    c.strokeStyle = wood; c.lineWidth = 3.5; c.beginPath(); c.moveTo(14, -12); c.lineTo(28, 2); c.stroke();
+  } else if (kind === 'shirt') {
+    c.fillStyle = pc.main; c.strokeStyle = dark; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(-8, -24); c.lineTo(-24, -14); c.lineTo(-18, -2); c.lineTo(-13, -6); c.lineTo(-13, 24); c.lineTo(13, 24); c.lineTo(13, -6); c.lineTo(18, -2); c.lineTo(24, -14); c.lineTo(8, -24); c.quadraticCurveTo(0, -16, -8, -24); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 1.5; for (let y = -6; y < 22; y += 6) { c.beginPath(); c.moveTo(-12, y); c.lineTo(12, y); c.stroke(); }
+  }
+  return cv.toDataURL();
 }
 
 /* ---------- Haupt-Renderfunktion ---------- */
@@ -3601,6 +4231,8 @@ function render() {
     if (p.kind === 'stone') {
       const g = w2s(p.x, p.y); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(g.x, g.y, 4 * z, 2 * z, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#77726a'; ctx.beginPath(); ctx.arc(s.x, s.y, 4 * z, 0, Math.PI * 2); ctx.fill();
+    } else if (p.kind === 'bullet') {
+      ctx.fillStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(s.x, s.y, 1.4 * z, 0, Math.PI * 2); ctx.fill();
     } else {
       const f2 = Math.min(1, (p.t + 0.03) / p.dur);
       const nx = p.x0 + (p.tx - p.x0) * f2, ny = p.y0 + (p.ty - p.y0) * f2, nz = p.z0 * (1 - f2) + Math.sin(f2 * Math.PI) * p.arc;
@@ -3633,7 +4265,7 @@ function render() {
       const h = unitHeight(e.type) + 8;
       hpBar(it.s.x, it.s.y - h * z, 22 * z, e.hp / e.maxHp, e.owner);
     } else if (it.k === 1 && (e.hp < e.maxHp || UI.selSet.has(e) || !e.built) && !(BUILDINGS[e.type].wall && !UI.selSet.has(e) && e.hp >= e.maxHp)) {
-      const s = w2s(e.x, e.y); const h = BUILDINGS[e.type].wall ? 34 : e.type === 'tc' ? 120 : e.type === 'tower' ? 100 : e.type === 'mill' ? 56 : 52;
+      const s = w2s(e.x, e.y); const h = BUILDINGS[e.type].wall ? 34 : Math.max(52, (BLD_HEIGHT[e.type] || 0) + 10);
       hpBar(s.x, s.y - h * z, Math.min(70, 18 + e.w * 12) * z, e.hp / e.maxHp, e.owner);
       if (!e.built) {
         const w = Math.min(70, 18 + e.w * 12) * z;
@@ -3776,7 +4408,7 @@ function drawShadows(z, vis) {
   for (const u of G.units) {
     if (u.dead) continue;
     const p = lerpPos(u), s = w2s(p.x, p.y); if (!vis(s.x, s.y)) continue;
-    const sw = (u.type === 'horseman' ? 13 : u.type === 'ram' || u.type === 'catapult' ? 17 : u.type === 'deer' ? 9 : 7) * z;
+    const sw = (u.def.cls === 'cav' ? 13 : u.def.siege ? 17 : u.type === 'deer' ? 9 : 7) * z;
     ctx.moveTo(s.x + 2 * z + sw, s.y + 0.5 * z); ctx.ellipse(s.x + 2 * z, s.y + 0.5 * z, sw, sw * 0.42, 0, 0, Math.PI * 2);
   }
   ctx.fillStyle = SHADOW_COL; ctx.fill();
@@ -3918,13 +4550,35 @@ function cmdButton(opts) {
   return b;
 }
 const BUILD_GROUPS = {
-  eco: ['house', 'mill', 'lumber', 'mining', 'farm', 'tc'],
-  mil: ['barracks', 'range', 'stable', 'siege'],
-  def: ['palisade', 'pgate', 'wall', 'sgate', 'tower'],
+  eco: ['house', 'mill', 'lumber', 'mining', 'farm', 'market', 'tc'],
+  mil: ['barracks', 'range', 'stable', 'siege', 'blacksmith'],
+  def: ['palisade', 'pgate', 'wall', 'sgate', 'tower', 'keep'],
+  lm: LANDMARKS,
 };
 // Tastenkürzel meiden W/A/S/D (Kamera)
-const BUILD_KEYS = { house: 'Q', mill: 'E', lumber: 'R', mining: 'F', farm: 'T', tc: 'G', barracks: 'Q', range: 'E', stable: 'R', siege: 'F', palisade: 'Q', pgate: 'E', wall: 'R', sgate: 'F', tower: 'T' };
+const BUILD_KEYS = { house: 'Q', mill: 'E', lumber: 'R', mining: 'F', farm: 'T', market: 'C', tc: 'G', barracks: 'Q', range: 'E', stable: 'R', siege: 'F', blacksmith: 'T',
+  palisade: 'Q', pgate: 'E', wall: 'R', sgate: 'F', tower: 'T', keep: 'G', lm_market: 'Q', lm_school: 'E', lm_treasury: 'R', lm_fort: 'F', lm_cathedral: 'T', lm_academy: 'G' };
 const TRAIN_KEYS = ['Q', 'E', 'R', 'F'];
+const TECH_KEYS = ['T', 'G', 'C', 'V'];
+const MKT_KEYS = ['Q', 'E', 'R', 'F', 'T', 'G'];
+const lockHtml = why => why ? `<div style="color:#ffb0a0;margin-top:3px">${why}</div>` : '';
+const qIcon = q => q.tech ? ICONS['t_' + TECHS[q.tech].icon] : ICONS[q.type];
+// Kurzinfo zu Rüstungsklasse und Werten einer Einheit
+function unitStats(ud) {
+  const r = ud.resist || {};
+  const arm = (r.melee !== undefined && r.melee < 1 ? ' · Nahkampfschutz ' + Math.round((1 - r.melee) * 100) + ' %' : '') + (r.pierce !== undefined && r.pierce < 1 ? ' · Pfeilschutz ' + Math.round((1 - r.pierce) * 100) + ' %' : '');
+  return `${ud.heavy ? 'Schwer' : ud.siege ? 'Belagerung' : 'Leicht'} · LP ${ud.hp} · Angriff ${ud.atkBld && ud.bldOnly ? ud.atkBld : ud.atk}${ud.range > 1 ? ' · Reichweite ' + ud.range : ''}${arm} · Bev. ${ud.pop} · ${ud.time}s`;
+}
+// Welche Technologien zeigt ein Gebäude an: je Reihe die nächste noch nicht erforschte Stufe
+function techsToShow(type, p) {
+  const out = [], seen = new Set();
+  for (const id of BUILDINGS[type].techs || []) {
+    const t = TECHS[id], line = id.replace(/\d$/, '');
+    if (p.techs[id] || seen.has(line)) continue;
+    seen.add(line); out.push(id);
+  }
+  return out;
+}
 
 function refreshCommands() {
   const box = $('cmds'); box.innerHTML = ''; UI.hotkeys = {};
@@ -3938,13 +4592,19 @@ function refreshCommands() {
     if (!UI.buildMenu) {
       box.appendChild(cmdButton({ text: 'Wirt\u00ADschaft', hotkey: 'Q', tip: () => '<div class="tt">Wirtschaftsgebäude (Q)</div>Häuser, Lager, Bauernhöfe, Dorfzentrum', onClick: () => { UI.buildMenu = 'eco'; refreshCommands(); } }));
       box.appendChild(cmdButton({ text: 'Militär', hotkey: 'E', tip: () => '<div class="tt">Militärgebäude</div>Kaserne, Schießstand, Stall, Belagerungswerkstatt', onClick: () => { UI.buildMenu = 'mil'; refreshCommands(); } }));
-      box.appendChild(cmdButton({ text: 'Vertei\u00ADdigung', hotkey: 'R', tip: () => '<div class="tt">Verteidigung</div>Palisaden, Steinmauern, Tore, Türme', onClick: () => { UI.buildMenu = 'def'; refreshCommands(); } }));
+      box.appendChild(cmdButton({ text: 'Vertei\u00ADdigung', hotkey: 'R', tip: () => '<div class="tt">Verteidigung</div>Palisaden, Steinmauern, Tore, Türme, Bergfried', onClick: () => { UI.buildMenu = 'def'; refreshCommands(); } }));
+      const nextAge = AGES[p.age + 1];
+      box.appendChild(cmdButton({ text: 'Wahr\u00ADzeichen', hotkey: 'F', active: LANDMARKS.some(k => !buildBlock(p, k) && BUILDINGS[k].landmark === p.age + 1 && canAfford(p, BUILDINGS[k].cost)),
+        tip: () => `<div class="tt">Wahrzeichen (F)</div>${nextAge ? 'Baue eines von zwei Wahrzeichen, um in die <b>' + nextAge.name + '</b> aufzusteigen.' + costHtml(nextAge.cost, p) : 'Du bist im letzten Zeitalter. Weitere Wahrzeichen bringen ihren Bonus.'}`,
+        onClick: () => { UI.buildMenu = 'lm'; refreshCommands(); } }));
     } else {
       for (const type of BUILD_GROUPS[UI.buildMenu]) {
         const d = BUILDINGS[type];
+        const why = buildBlock(p, type);
+        if (UI.buildMenu === 'lm' && d.landmark > p.age + 1) continue; // spätere Zeitalter noch nicht zeigen
         box.appendChild(cmdButton({
-          icon: ICONS[type], label: d.short || d.name, hotkey: BUILD_KEYS[type], disabled: !canAfford(p, d.cost), active: UI.placing && UI.placing.type === type,
-          tip: () => `<div class="tt">${d.name}</div>${costHtml(d.cost, p)}${d.desc}${d.line ? '<br><i>Klicken und ziehen für eine Linie.</i>' : ''}`,
+          icon: ICONS[type], label: d.short || d.name, hotkey: BUILD_KEYS[type], disabled: !!why || !canAfford(p, d.cost), active: UI.placing && UI.placing.type === type,
+          tip: () => `<div class="tt">${d.name}</div>${costHtml(d.cost, p)}${d.landmark && d.landmark > p.age ? '<b>Aufstieg in die ' + AGES[d.landmark].name + '.</b><br>' : ''}${d.desc}${d.line ? '<br><i>Klicken und ziehen für eine Linie.</i>' : ''}${lockHtml(buildBlock(p, type))}`,
           onClick: () => startPlacing(type),
         }));
       }
@@ -3961,17 +4621,38 @@ function refreshCommands() {
     const b = blds[0]; const d = BUILDINGS[b.type];
     if (b.built && d.trains) {
       d.trains.forEach((ut, k) => {
-        const ud = UNITS[ut];
+        const ud = UNITS[ut]; const locked = ud.age > p.age;
         box.appendChild(cmdButton({
-          icon: ICONS[ut], label: ud.name, hotkey: TRAIN_KEYS[k], disabled: !canAfford(p, ud.cost),
-          tip: () => `<div class="tt">${ud.name}</div>${costHtml(ud.cost, p)}${ud.desc}<br><span style="opacity:.75">LP ${ud.hp} · Angriff ${ud.atkBld || ud.atk}${ud.range > 1 ? ' · Reichweite ' + ud.range : ''} · Bev. ${ud.pop} · ${ud.time}s</span>${IS_TOUCH ? '' : '<br><i>Shift+Klick: 5×</i>'}`,
-          onClick: e => { issue({ c: 'train', ids: blds.filter(x => x.type === b.type).map(x => x.id), type: ut, n: e.shiftKey ? 5 : 1 }); refreshPanel(true); },
+          icon: ICONS[ut], label: ud.short || ud.name, hotkey: TRAIN_KEYS[k], disabled: locked || !canAfford(p, ud.cost),
+          tip: () => `<div class="tt">${ud.name}</div>${costHtml(ud.cost, p)}${ud.desc}<br><span style="opacity:.75">${unitStats(ud)}</span>${locked ? lockHtml('Benötigt ' + AGES[ud.age].name) : (IS_TOUCH ? '' : '<br><i>Shift+Klick: 5×</i>')}`,
+          onClick: e => { if (locked) { notifyLocal('Benötigt ' + AGES[ud.age].name + '.'); return; } issue({ c: 'train', ids: blds.filter(x => x.type === b.type).map(x => x.id), type: ut, n: e.shiftKey ? 5 : 1 }); refreshPanel(true); },
         }));
+      });
+    }
+    if (b.built && d.techs) {
+      techsToShow(b.type, p).slice(0, 4).forEach((id, k) => {
+        const t = TECHS[id]; const why = techBlock(p, id);
+        box.appendChild(cmdButton({
+          icon: ICONS['t_' + t.icon], label: t.name, hotkey: d.trains ? TECH_KEYS[k] : TRAIN_KEYS[k], disabled: !!why || !canAfford(p, t.cost), active: !!p.researching[id],
+          tip: () => `<div class="tt">${t.name}</div>${costHtml(t.cost, p)}${t.desc}<br><span style="opacity:.75">Forschung · ${t.time}s</span>${lockHtml(techBlock(p, id))}`,
+          onClick: () => { const w = techBlock(p, id); if (w) { notifyLocal(w + '.'); return; } issue({ c: 'res', id: b.id, tech: id }); refreshPanel(true); },
+        }));
+      });
+    }
+    if (b.built && d.market) {
+      ['food', 'wood', 'stone'].forEach((r, k) => {
+        box.appendChild(cmdButton({ text: 'Kaufen\n' + RES_DE[r], hotkey: MKT_KEYS[k * 2], disabled: p.res.gold < mktBuy(p, r),
+          tip: () => `<div class="tt">100 ${RES_DE[r]} kaufen</div>${costHtml({ gold: mktBuy(p, r) }, p)}Jeder Kauf macht ${RES_DE[r]} teurer.`,
+          onClick: () => { issue({ c: 'mkt', r, buy: true }); refreshPanel(true); } }));
+        box.appendChild(cmdButton({ text: 'Verkaufen\n' + RES_DE[r], hotkey: MKT_KEYS[k * 2 + 1], disabled: p.res[r] < 100,
+          tip: () => `<div class="tt">100 ${RES_DE[r]} verkaufen</div>Erlös: <b>${mktSell(p, r)} Gold</b><br>Jeder Verkauf senkt den Preis.`,
+          onClick: () => { issue({ c: 'mkt', r, buy: false }); refreshPanel(true); } }));
       });
     }
     box.appendChild(cmdButton({ text: 'Abreißen', hotkey: 'Entf', tip: () => '<div class="tt">Abreißen (Entf)</div>Gebäude zerstören. Unfertige Gebäude erstatten einen Teil der Kosten.', onClick: () => deleteSelection() }));
   }
 }
+const b_isSmith = e => e.type === 'blacksmith';
 function selectIdleVillager() {
   const idle = G.units.filter(u => !u.dead && u.owner === G.human && u.type === 'villager' && !u.order);
   if (idle.length) { UI.idleIdx = ((UI.idleIdx || 0) + 1) % idle.length; const u = idle[UI.idleIdx]; setSelection([u]); centerOn(u.x, u.y); }
@@ -4006,7 +4687,8 @@ function refreshPanel(force) {
   const key = UI.sel.map(e => e.id).join(',') + '|' + (UI.buildMenu || '') + '|' + (UI.cmdMode || '') + '|' + (UI.placing ? UI.placing.type : '');
   const p = G.players[G.human];
   // Kosten-Verfügbarkeit ändert sich -> Befehle neu, aber gedrosselt
-  const affordKey = RES_TYPES.map(k => Math.floor(p.res[k] / 25)).join(',') + (UI.sel[0] && UI.sel[0].built ? 'b' : '');
+  const affordKey = RES_TYPES.map(k => Math.floor(p.res[k] / 25)).join(',') + (UI.sel[0] && UI.sel[0].built ? 'b' : '')
+    + p.age + '|' + Object.keys(p.techs).length + '|' + Object.keys(p.researching).length + '|' + (p.mkt ? p.mkt.food + p.mkt.wood * 3 + p.mkt.stone * 7 : 0);
   if (force || key !== UI.lastSelKey || affordKey !== UI.lastAfford) { refreshCommands(); UI.lastSelKey = key; UI.lastAfford = affordKey; }
   if (!UI.sel.length) {
     const idle = G.units.filter(u => !u.dead && u.owner === G.human && u.type === 'villager' && !u.order).length;
@@ -4036,7 +4718,7 @@ function refreshPanel(force) {
       info.innerHTML = `<div class="selTitle"><img src="${ICONS[e.type]}">${d.name}</div>
         <div class="hpbar"><div style="width:${e.hp / e.maxHp * 100}%"></div></div>
         <div class="sub">LP ${Math.ceil(e.hp)} / ${e.maxHp} · ${owner}</div>
-        ${d.gaia ? `<div class="sub">Dorfbewohner können es per ${IS_TOUCH ? 'Antippen' : 'Rechtsklick'} jagen.</div>` : `<div class="sub">Angriff ${d.bldOnly ? d.atkBld + ' (nur Gebäude)' : d.atk}${d.atkBld && !d.bldOnly ? ' / ' + d.atkBld + ' gg. Gebäude' : ''} · ${d.range > 1 ? 'Reichweite ' + d.range + (d.minRange ? ' (min. ' + d.minRange + ')' : '') : 'Nahkampf'}</div>
+        ${d.gaia ? `<div class="sub">Dorfbewohner können es per ${IS_TOUCH ? 'Antippen' : 'Rechtsklick'} jagen.</div>` : `<div class="sub">${d.military ? (d.heavy ? 'Schwer · ' : d.siege ? 'Belagerung · ' : 'Leicht · ') : ''}Angriff ${d.bldOnly ? d.atkBld + ' (nur Gebäude)' : d.atk}${d.atkBld && !d.bldOnly ? ' / ' + d.atkBld + ' gg. Gebäude' : ''} · ${d.range > 1 ? 'Reichweite ' + d.range + (d.minRange ? ' (min. ' + d.minRange + ')' : '') : 'Nahkampf'}</div>
         <div class="sub">${state}</div>`}`;
       return;
     }
@@ -4051,12 +4733,16 @@ function refreshPanel(force) {
         if (d.drop) facts.push('Lager für: ' + d.drop.map(r => RES_DE[r]).join(', '));
         if (d.pop) facts.push('+' + d.pop + ' Bevölkerung');
         if (facts.length) html += `<div class="sub">${facts.join(' · ')}</div>`;
-        if (d.attack) html += `<div class="sub">Schießt Pfeile: ${d.attack.dmg} Schaden, Reichweite ${d.attack.range}</div>`;
+        if (d.attack) html += `<div class="sub">Schießt ${d.attack.n > 1 ? d.attack.n + ' ' : ''}Pfeile: ${d.attack.dmg} Schaden, Reichweite ${d.attack.range}</div>`;
+        if (d.landmark || e.capital) html += `<div class="sub" style="color:#ffe2a6">Wahrzeichen${d.landmark ? ' (' + AGES[d.landmark].name + ')' : ''} – verliert ein Spieler alle Wahrzeichen, ist das Spiel verloren.</div>`;
+        if (d.landmark && d.eff) html += `<div class="sub">${d.desc.replace(/^Wahrzeichen[^.]*\. /, '')}</div>`;
+        if (own && d.market) html += `<div class="sub">Preise (Gold je 100): ${['food', 'wood', 'stone'].map(r => RES_DE[r] + ' ' + mktBuy(p, r) + ' / ' + mktSell(p, r)).join(' · ')}</div>`;
+        if (own && b_isSmith(e)) html += `<div class="sub">${['melee', 'ranged', 'marmor', 'parmor'].map(l => TECHS[l + '1'].name.replace(/ I$/, '') + ': ' + ([3, 2, 1].find(k => p.techs[l + k]) || 0) + '/3').join(' · ')}</div>`;
         if (d.farm) { const f = e.farmer && G.byId.get(e.farmer); html += `<div class="sub">${f && !f.dead ? 'Wird bewirtschaftet' : 'Frei – Dorfbewohner per ' + (IS_TOUCH ? 'Antippen' : 'Rechtsklick') + ' zuweisen'}</div>`; }
         if (d.gate) html += `<div class="sub">Eigene Einheiten können passieren.</div>`;
       }
       if (own && e.queue.length) {
-        html += '<div class="queue">' + e.queue.map((q, k) => `<div class="qitem" data-q="${k}" title="Klicken zum Abbrechen"><img src="${ICONS[q.type]}">${k === 0 ? `<div class="qp" style="width:${q.t / UNITS[q.type].time * 100}%"></div>` : ''}<span class="qx">✕</span></div>`).join('') + '</div>';
+        html += '<div class="queue">' + e.queue.map((q, k) => `<div class="qitem" data-q="${k}" title="${q.tech ? TECHS[q.tech].name : UNITS[q.type].name} – klicken zum Abbrechen"><img src="${qIcon(q)}">${k === 0 ? `<div class="qp" style="width:${q.t / qTime(q) * 100}%"></div>` : ''}<span class="qx">✕</span></div>`).join('') + '</div>';
         if (e.popBlocked) html += '<div class="sub" style="color:#ffb0a0">Bevölkerungslimit erreicht – baue Häuser!</div>';
       }
       if (own && d.trains && e.built && !e.queue.length) html += `<div class="sub" style="opacity:.6;margin-top:4px">${IS_TOUCH ? 'Auf die Karte tippen' : 'Rechtsklick auf die Karte'} setzt den Sammelpunkt.</div>`;
@@ -4086,6 +4772,8 @@ function updateTopBar() {
   $('rGold').textContent = Math.floor(p.res.gold); $('rStone').textContent = Math.floor(p.res.stone);
   const popEl = $('rPop'); popEl.textContent = p.pop + '/' + Math.min(MAX_POP, p.popCap);
   popEl.style.color = p.pop >= p.popCap ? '#ff9a8a' : '';
+  const ag = AGES[p.age || 0], ageTxt = ag.short + ' · ' + ag.name;
+  if ($('rAge').textContent !== ageTxt) { $('rAge').innerHTML = ag.short + '<span class="ageN"> · ' + ag.name + '</span>'; $('ageBox').title = 'Zeitalter: ' + ag.name + (AGES[p.age + 1] ? ' – nächstes Zeitalter über ein Wahrzeichen (Dorfbewohner → Wahrzeichen)' : ''); }
   $('clock').textContent = fmtTime(G.time);
 }
 
@@ -4171,7 +4859,7 @@ function pickAt(sx, sy) {
     if (!inMap(ax, ay)) continue;
     const b = G.bld[ay * N + ax];
     if (b && !BUILDINGS[b.type].farm && !BUILDINGS[b.type].wall) {
-      const s = w2s(b.x, b.y); const hgt = (b.type === 'tc' ? 95 : b.type === 'tower' ? 90 : 45) * z;
+      const s = w2s(b.x, b.y); const hgt = Math.max(45, BLD_HEIGHT[b.type] || 0) * z;
       if (sy > s.y - hgt && Math.abs(sx - s.x) < (b.w + b.h) * HALF_W * z / 2) return b;
     }
   }
@@ -5047,7 +5735,7 @@ function startGame(seed, diff, map, opts) {
   setSelection([tc]);
   const foe = PLAYER_COLORS[1 - G.human].name.toLowerCase();
   notify(G.net ? `Mehrspieler: Du spielst ${PLAYER_COLORS[G.human].name}. Zerstöre die ${foe}e Siedlung!`
-    : 'Willkommen in Burgfeld! Sammle Ressourcen, baue deine Siedlung aus und zerstöre den roten Gegner.');
+    : 'Willkommen in Burgfeld! Baue deine Wirtschaft auf, steige mit Wahrzeichen in neue Zeitalter auf und zerstöre die Wahrzeichen des roten Gegners.');
 }
 // Gemeinsamer Teil für neues und geladenes Spiel
 function beginSession() {
@@ -5137,6 +5825,7 @@ function deserializeGame(data) {
   g.grid = Array.from({ length: CN * CN }, () => []);
   g.byId = new Map();
   for (const list of [g.units, g.buildings, g.resources]) for (const e of list) if (!e.dead) g.byId.set(e.id, e);
+  migrateGame(g);
   return g;
 }
 function saveMeta(slot) {

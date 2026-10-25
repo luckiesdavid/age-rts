@@ -622,7 +622,7 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '1.8';
+const GAME_VERSION = '1.9';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -4999,7 +4999,8 @@ let paused = false, running = false;
 // Bedienung am Rechner: Maus oder Touchpad (z. B. MacBook). Betrifft nur Kamera und Eingabe, nie die Simulation.
 const CTRL_KEY = 'burgschiltberg.ctrl';
 const CTRL_NAMES = { auto: 'Automatisch', pad: 'Touchpad', mouse: 'Maus' };
-const CTRL = { mode: 'auto', edge: true, padT: -1e9, gesture: false, hinted: false };
+const CTRL = { mode: 'auto', edge: true, padT: -1e9, gesture: false, hinted: false, mouseN: 0,
+  pad: /Mac/.test(navigator.platform || navigator.userAgent) }; // Macs haben meist ein Touchpad
 try {
   const c = JSON.parse(localStorage.getItem(CTRL_KEY));
   if (c && CTRL_NAMES[c.mode]) CTRL.mode = c.mode;
@@ -5020,16 +5021,16 @@ function renderCtrl() {
 function wheelIsPad(e) {
   if (CTRL.mode !== 'auto') return CTRL.mode === 'pad';
   const now = performance.now();
-  let pad;
-  if (e.deltaMode !== 0) pad = false; // Firefox-Mausrad zählt in Zeilen
-  else if (e.deltaX !== 0) pad = true; // Mausräder scrollen nicht seitlich (Shift wird zu deltaX, deshalb unten nachgeprüft)
-  else if (e.wheelDeltaY) pad = Math.abs(e.wheelDeltaY) % 120 !== 0; // Raststufen liefern Vielfache von 120
-  else pad = !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 16;
-  if (pad && e.shiftKey && e.deltaY === 0 && e.wheelDeltaX && Math.abs(e.wheelDeltaX) % 120 === 0) pad = false;
-  // innerhalb einer Geste samt Nachlauf nicht hin und her springen
-  if (pad) CTRL.padT = now; else if (now - CTRL.padT < 500) pad = true;
-  if (pad && !CTRL.hinted && running && G) { CTRL.hinted = true; notifyLocal('Touchpad erkannt: zwei Finger schieben die Kamera, Pinch zoomt. Umstellen im Pausenmenü.', false); }
-  return pad;
+  // Ein Mausrad nur bei eindeutigen Raststufen annehmen: Zeilen (Firefox) oder große, ganzzahlige Sprünge
+  // mit wheelDelta in Vielfachen von 120. Alles Kleine, Krumme oder Seitliche ist ein Touchpad.
+  const dy = Math.abs(e.deltaY);
+  const notch = e.deltaMode !== 0 || (e.deltaX === 0 && dy >= 50 && Number.isInteger(e.deltaY) && (!e.wheelDeltaY || Math.abs(e.wheelDeltaY) % 120 === 0));
+  if (!notch) { CTRL.pad = true; CTRL.padT = now; CTRL.mouseN = 0; }
+  // erst mehrere Raststufen hintereinander und eine Weile ohne Touchpad-Ereignis schalten auf Maus um
+  else if (CTRL.pad && ++CTRL.mouseN >= 3 && now - CTRL.padT > 1500) CTRL.pad = false;
+  else if (!CTRL.pad) CTRL.mouseN = 0;
+  if (CTRL.pad && !CTRL.hinted && running && G) { CTRL.hinted = true; notifyLocal('Touchpad erkannt: zwei Finger schieben die Kamera, Pinch zoomt. Umstellen im Pausenmenü.', false); }
+  return CTRL.pad;
 }
 function panBy(dx, dy) { cam.x += dx / cam.zoom; cam.y += dy / cam.zoom; clampCam(); if (UI.placing) updatePlacingPos(); }
 function zoomCenter(f) { zoomAt(VW / 2, (UI_TOP + VH - UI_BOT) / 2, cam.zoom * f); }

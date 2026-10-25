@@ -140,6 +140,18 @@ html, body {
 .stats td, .stats th { padding: 5px 8px; border-bottom: 1px solid #c4a874; text-align: right; }
 .stats td:first-child, .stats th:first-child { text-align: left; }
 .center { text-align: center; }
+.slot { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-top: 8px;
+  border: 1px solid #b89a63; border-radius: 6px; background: #f7ecd0; }
+.slot .meta { flex: 1; min-width: 0; font-size: 14px; }
+.slot .meta b { color: #5a2a14; font-size: 16px; font-weight: normal; }
+.slot .meta small { display: block; opacity: .75; margin-top: 2px; }
+.slot.empty .meta { opacity: .6; font-style: italic; }
+.sbtn { padding: 6px 14px; font-family: inherit; font-size: 14px; cursor: pointer; border-radius: 4px;
+  background: linear-gradient(#6b5a3a, #43361f); color: #ffe9c0; border: 1px solid #2c2212; }
+.sbtn:hover { background: linear-gradient(#7c6943, #4f3f24); }
+.sbtn.del { background: none; color: #7a1d16; border-color: #b89a63; padding: 6px 9px; }
+.sbtn:disabled { opacity: .4; cursor: default; }
+#saveHint { text-align: center; font-size: 13px; color: #6b4a2b; margin-top: 10px; min-height: 18px; }
 </style>
 </head>
 <body>
@@ -181,6 +193,10 @@ html, body {
     </div>
     <div class="row">Karten-Seed: <input id="seedInput" type="text" placeholder="zufällig"></div>
     <button class="bigbtn" id="btnStart">Spiel starten</button>
+    <div class="center">
+      <button class="bigbtn alt hidden" id="btnContinue">Letzten Spielstand fortsetzen</button>
+      <button class="bigbtn alt hidden" id="btnLoadStart">Spiel laden</button>
+    </div>
     <h3>Steuerung</h3>
     <div class="keys">
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
@@ -212,7 +228,19 @@ html, body {
     <h1 style="font-size:40px">Pausiert</h1>
     <h2>Leertaste oder P zum Fortsetzen</h2>
     <button class="bigbtn alt" id="btnResume">Fortsetzen</button>
+    <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
+    <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
     <button class="bigbtn alt" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
+  </div>
+</div>
+
+<div id="saveScreen" class="screen hidden">
+  <div class="panel">
+    <h1 id="saveTitle" style="font-size:38px">Spiel speichern</h1>
+    <h2 id="saveSub"></h2>
+    <div id="saveSlots"></div>
+    <div id="saveHint"></div>
+    <div class="center"><button class="bigbtn alt" id="btnSaveBack">Zurück</button></div>
   </div>
 </div>
 
@@ -2976,7 +3004,7 @@ function refreshCommands() {
     box.appendChild(cmdButton({ text: 'Abreißen', hotkey: 'Entf', tip: () => '<div class="tt">Abreißen (Entf)</div>Gebäude zerstören. Unfertige Gebäude erstatten einen Teil der Kosten.', onClick: () => deleteSelection() }));
   }
 }
-function notifyLocal(t) { G.msgs.push({ text: t, warn: true, t: G.time }); }
+function notifyLocal(t, warn) { G.msgs.push({ text: t, warn: warn !== false, t: G.time }); }
 function deleteSelection() {
   const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
   if (!own.length) return;
@@ -3353,7 +3381,9 @@ function setupInput() {
   window.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
     if (e.target && e.target.tagName === 'INPUT') { if (k === 'enter') startGameFromMenu(); return; }
+    if (!$('saveScreen').classList.contains('hidden')) { if (k === 'escape') closeSaveScreen(); return; }
     if (!running) return;
+    if (k === 'f5' || ((e.ctrlKey || e.metaKey) && k === 's')) { e.preventDefault(); openSaveScreen('save'); if (!paused) togglePause(); return; }
     if (k === ' ' || k === 'p') { e.preventDefault(); togglePause(); return; }
     if (paused) return;
     INPUT.keys.add(k);
@@ -3369,7 +3399,7 @@ function setupInput() {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey || e.altKey) {
         G.groups[digit] = UI.sel.filter(x => x.owner === G.human && !x.dead);
-        notifyLocal('Gruppe ' + digit + ' gesetzt (' + G.groups[digit].length + ').');
+        notifyLocal('Gruppe ' + digit + ' gesetzt (' + G.groups[digit].length + ').', false);
       } else {
         const g = (G.groups[digit] || []).filter(x => !x.dead);
         if (e.shiftKey) setSelection(UI.sel.concat(g.filter(x => !UI.selSet.has(x))));
@@ -3410,6 +3440,10 @@ function setupInput() {
     document.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
   }));
   $('btnStart').addEventListener('click', startGameFromMenu);
+  $('btnSaveMenu').addEventListener('click', () => openSaveScreen('save'));
+  $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
+  $('btnLoadStart').addEventListener('click', () => openSaveScreen('load'));
+  $('btnSaveBack').addEventListener('click', closeSaveScreen);
   $('btnRestartSame').addEventListener('click', () => { $('endScreen').classList.add('hidden'); startGame(G.seed, G.diff); });
   $('btnNew').addEventListener('click', () => { $('endScreen').classList.add('hidden'); showMenu(); });
 }
@@ -3455,6 +3489,7 @@ function togglePause() {
 let lastFrame = 0, acc = 0, fpsT = 0, fpsN = 0;
 function showMenu() {
   running = false;
+  updateMenuButtons();
   $('startScreen').classList.remove('hidden');
   $('topbar').classList.add('hidden'); $('bottom').classList.add('hidden');
 }
@@ -3466,6 +3501,14 @@ function startGameFromMenu() {
 }
 function startGame(seed, diff) {
   newGame(seed, diff, {});
+  const tc = G.buildings.find(b => b.owner === G.human && b.type === 'tc');
+  cam.zoom = 1; centerOn(tc.x + 2, tc.y + 2);
+  beginSession();
+  setSelection([tc]);
+  notify('Willkommen in Burgfeld! Sammle Ressourcen, baue deine Siedlung aus und zerstöre den roten Gegner.');
+}
+// Gemeinsamer Teil für neues und geladenes Spiel
+function beginSession() {
   UI.alerts = []; let lastAlert = -99;
   G.onHit = t => {
     if (G.time - lastAlert < 12) return;
@@ -3478,14 +3521,160 @@ function startGame(seed, diff) {
   $('msgs').innerHTML = '';
   buildTerrain();
   G.mmDirty = true; mmT = 0; updateMinimapTiles();
-  const tc = G.buildings.find(b => b.owner === G.human && b.type === 'tc');
-  cam.zoom = 1; centerOn(tc.x + 2, tc.y + 2);
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('pauseScreen').classList.add('hidden');
+  $('saveScreen').classList.add('hidden');
   $('topbar').classList.remove('hidden'); $('bottom').classList.remove('hidden');
-  $('diffLabel').textContent = 'Gegner: ' + DIFFS[diff].name + ' · Seed ' + seed;
+  $('diffLabel').textContent = 'Gegner: ' + DIFFS[G.diff].name + ' · Seed ' + G.seed;
   paused = false; running = true; acc = 0;
-  setSelection([tc]);
-  notify('Willkommen in Burgfeld! Sammle Ressourcen, baue deine Siedlung aus und zerstöre den roten Gegner.');
+  G.nextAutosave = G.time + AUTOSAVE_EVERY;
+}
+
+/* ---------- Speichern & Laden ---------- */
+// Der Spielzustand ist ein Objektgraph mit vielen Querverweisen (Befehle, Ziele, Gruppen …).
+// Einheiten, Gebäude und Ressourcen werden deshalb einmal in einer Tabelle abgelegt und
+// überall sonst nur per ID referenziert. Konstante Definitionen werden über ihren Schlüssel gespeichert.
+const SAVE_VER = 1, SAVE_KEY = 'burgfeld.save.', SAVE_SLOTS = ['auto', '1', '2', '3'];
+const AUTOSAVE_EVERY = 120; // Sekunden Spielzeit
+const SAVE_SKIP = new Set(['grid', 'byId', 'onHit', 'msgs']);
+const CONST_REF = new Map();
+for (const k in UNITS) CONST_REF.set(UNITS[k], { $u: k });
+for (const k in BUILDINGS) CONST_REF.set(BUILDINGS[k], { $b: k });
+for (const k in DIFFS) CONST_REF.set(DIFFS[k], { $d: k });
+const TYPED = { Uint8Array, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array };
+const isEnt = v => typeof v.id === 'number' && (v.kind === 'unit' || v.kind === 'bld' || v.kind === 'res');
+function bytesToB64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+function b64ToBytes(b) { const s = atob(b), u8 = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i); return u8; }
+
+function serializeGame() {
+  const ents = {};
+  const enc = (v, self) => {
+    if (typeof v === 'function') return undefined;
+    if (typeof v === 'number') return isFinite(v) ? v : { $n: String(v) };
+    if (v === null || typeof v !== 'object') return v;
+    const c = CONST_REF.get(v); if (c) return c;
+    if (v !== self && isEnt(v)) {
+      if (!(v.id in ents)) { ents[v.id] = null; ents[v.id] = encObj(v, v); }
+      return { $r: v.id };
+    }
+    if (ArrayBuffer.isView(v)) return { $ta: v.constructor.name, d: bytesToB64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) };
+    if (v instanceof Set) return { $set: [...v].map(x => enc(x)) };
+    if (v instanceof Map) return { $map: [...v].map(([k, x]) => [k, enc(x)]) };
+    if (Array.isArray(v)) return v.map(x => { const r = enc(x); return r === undefined ? null : r; });
+    return encObj(v, self);
+  };
+  const encObj = (o, self) => { const out = {}; for (const k in o) { const r = enc(o[k], self); if (r !== undefined) out[k] = r; } return out; };
+  const g = {}; for (const k in G) if (!SAVE_SKIP.has(k)) { const r = enc(G[k]); if (r !== undefined) g[k] = r; }
+  return { v: SAVE_VER, g, ents, cam: { x: cam.x, y: cam.y, zoom: cam.zoom } };
+}
+function deserializeGame(data) {
+  const ents = {};
+  for (const id in data.ents) ents[id] = {};
+  const dec = v => {
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(dec);
+    if ('$r' in v) return ents[v.$r];
+    if ('$u' in v) return UNITS[v.$u];
+    if ('$b' in v) return BUILDINGS[v.$b];
+    if ('$d' in v) return DIFFS[v.$d];
+    if ('$n' in v) return Number(v.$n);
+    if ('$ta' in v) return new TYPED[v.$ta](b64ToBytes(v.d).buffer);
+    if ('$set' in v) return new Set(v.$set.map(dec));
+    if ('$map' in v) return new Map(v.$map.map(([k, x]) => [k, dec(x)]));
+    const o = {}; for (const k in v) o[k] = dec(v[k]); return o;
+  };
+  for (const id in data.ents) Object.assign(ents[id], dec(data.ents[id]));
+  const g = dec(data.g);
+  g.msgs = [];
+  g.grid = Array.from({ length: CN * CN }, () => []);
+  g.byId = new Map();
+  for (const list of [g.units, g.buildings, g.resources]) for (const e of list) if (!e.dead) g.byId.set(e.id, e);
+  return g;
+}
+function saveMeta(slot) {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY + slot + '.meta')); } catch (e) { return null; }
+}
+function saveGame(slot, quiet) {
+  if (!G || G.over) return false;
+  try {
+    const data = JSON.stringify(serializeGame());
+    const p = G.players[G.human];
+    const meta = { date: Date.now(), time: G.time, diff: G.diff, seed: G.seed, pop: p.pop, popCap: p.popCap };
+    localStorage.setItem(SAVE_KEY + slot, data);
+    localStorage.setItem(SAVE_KEY + slot + '.meta', JSON.stringify(meta));
+    if (!quiet) notifyLocal(slot === 'auto' ? 'Automatisch gespeichert.' : 'Spiel in Platz ' + slot + ' gespeichert.', false);
+    return true;
+  } catch (e) {
+    console.error(e);
+    if (!quiet) notifyLocal('Speichern fehlgeschlagen: Browser-Speicher voll oder gesperrt.', true);
+    return false;
+  }
+}
+function loadGame(slot) {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(SAVE_KEY + slot)); } catch (e) { data = null; }
+  if (!data || data.v !== SAVE_VER) { setSaveHint('Dieser Spielstand kann nicht geladen werden.'); return false; }
+  G = deserializeGame(data);
+  rebuildGrid();
+  cam.x = data.cam.x; cam.y = data.cam.y; cam.zoom = data.cam.zoom; clampCam();
+  beginSession();
+  const tc = G.buildings.find(b => !b.dead && b.owner === G.human && b.type === 'tc');
+  if (tc) setSelection([tc]); else setSelection([]);
+  notify('Spielstand geladen (' + fmtTime(G.time) + ').');
+  return true;
+}
+function deleteSave(slot) {
+  try { localStorage.removeItem(SAVE_KEY + slot); localStorage.removeItem(SAVE_KEY + slot + '.meta'); } catch (e) { /* ignorieren */ }
+}
+function autosaveTick() {
+  if (!G || G.over || G.time < G.nextAutosave) return;
+  G.nextAutosave = G.time + AUTOSAVE_EVERY;
+  saveGame('auto', true);
+}
+function fmtDate(ms) {
+  const d = new Date(ms), p = n => String(n).padStart(2, '0');
+  return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function setSaveHint(t) { $('saveHint').textContent = t || ''; }
+let saveMode = 'save';
+function openSaveScreen(mode) {
+  saveMode = mode;
+  $('saveTitle').textContent = mode === 'save' ? 'Spiel speichern' : 'Spiel laden';
+  $('saveSub').textContent = mode === 'save' ? 'Wähle einen Speicherplatz' : 'Wähle einen Spielstand';
+  setSaveHint('');
+  renderSaveSlots();
+  $('saveScreen').classList.remove('hidden');
+}
+function closeSaveScreen() { $('saveScreen').classList.add('hidden'); if (!running) updateMenuButtons(); }
+function renderSaveSlots() {
+  const box = $('saveSlots'); box.innerHTML = '';
+  for (const slot of SAVE_SLOTS) {
+    const m = saveMeta(slot);
+    const row = document.createElement('div'); row.className = 'slot' + (m ? '' : ' empty');
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const name = slot === 'auto' ? 'Automatisch' : 'Platz ' + slot;
+    meta.innerHTML = m
+      ? `<b>${name}</b> · Spielzeit ${fmtTime(m.time)} · Gegner ${DIFFS[m.diff] ? DIFFS[m.diff].name : '?'}<small>${fmtDate(m.date)} · Bevölkerung ${m.pop}/${m.popCap} · Seed ${m.seed}</small>`
+      : `<b>${name}</b> · leer`;
+    row.appendChild(meta);
+    const btn = (text, cls, fn, dis) => { const b = document.createElement('button'); b.className = 'sbtn ' + cls; b.textContent = text; b.disabled = !!dis; b.addEventListener('click', fn); row.appendChild(b); };
+    if (saveMode === 'save') {
+      if (slot !== 'auto') btn(m ? 'Überschreiben' : 'Speichern', '', () => {
+        if (saveGame(slot, true)) { renderSaveSlots(); setSaveHint('Gespeichert in ' + name + '.'); }
+        else setSaveHint('Speichern fehlgeschlagen: Browser-Speicher voll oder gesperrt.');
+      });
+    } else btn('Laden', '', () => { $('saveScreen').classList.add('hidden'); loadGame(slot); }, !m);
+    if (m) btn('✕', 'del', () => { if (confirm(name + ' wirklich löschen?')) { deleteSave(slot); renderSaveSlots(); if (!running) updateMenuButtons(); } });
+    box.appendChild(row);
+  }
+  if (saveMode === 'save') setSaveHint($('saveHint').textContent || 'Alle ' + (AUTOSAVE_EVERY / 60) + ' Minuten wird zusätzlich automatisch gespeichert.');
+}
+// Startbildschirm: Laden-Knöpfe nur zeigen, wenn es Spielstände gibt
+function updateMenuButtons() {
+  let newest = null;
+  for (const slot of SAVE_SLOTS) { const m = saveMeta(slot); if (m && (!newest || m.date > newest.m.date)) newest = { slot, m }; }
+  $('btnContinue').classList.toggle('hidden', !newest);
+  $('btnLoadStart').classList.toggle('hidden', !newest);
+  $('btnContinue').onclick = newest ? () => loadGame(newest.slot) : null;
 }
 function frame(t) {
   requestAnimationFrame(frame);
@@ -3502,7 +3691,8 @@ function frame(t) {
     if (n >= 5) acc = 0;
     renderAlpha = clamp(acc / SIM_DT, 0, 1);
     updateCamera(dt);
-    if (G.over) { refreshPanel(true); setTimeout(showEnd, 1200); }
+    if (G.over) { refreshPanel(true); setTimeout(showEnd, 1200); deleteSave('auto'); }
+    else autosaveTick();
   }
   render();
   renderMinimap(dt);
@@ -3515,6 +3705,9 @@ function boot() {
   window.addEventListener('resize', resize);
   makeIcons();
   setupInput();
+  updateMenuButtons();
+  // Beim Schließen des Tabs den aktuellen Stand sichern
+  window.addEventListener('pagehide', () => { if (running && G && !G.over) saveGame('auto', true); });
   requestAnimationFrame(frame);
 }
 boot();

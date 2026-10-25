@@ -31,6 +31,23 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 
 **Ziel:** Zerstöre alle gegnerischen Gebäude (Mauern zählen nicht) – oder sein Dorfzentrum und alle seine Einheiten. Umgekehrt verlierst du.
 
+## Auf dem Handy
+
+Das Spiel läuft auch auf Handys und Tablets (einfach <https://luckiesdavid.github.io/age-rts/> öffnen, am besten im Querformat; Hochformat geht auch). Auf Touch-Geräten schaltet es automatisch in den Handymodus: kompakte Leisten, große Knöpfe, Vollbild beim Spielstart und eine automatisch sinkende Auflösung, falls die Bildrate zu niedrig ist. Zum Ausprobieren am Rechner `index.html#touch` öffnen.
+
+| Geste | Wirkung |
+|---|---|
+| Tippen | auswählen; mit eigener Auswahl: bewegen, angreifen, sammeln, bauen/reparieren (wie Rechtsklick) |
+| Lange drücken | nur auswählen (z. B. ein eigenes Gebäude, während Dorfbewohner ausgewählt sind) |
+| Lange drücken und ziehen | Rahmenauswahl |
+| Doppelt tippen | alle gleichartigen Einheiten/Gebäude im Bild |
+| Ein Finger wischen | Kamera bewegen (mit Nachlauf) |
+| Zwei Finger | zoomen und schieben |
+| Minikarte antippen/ziehen | Kamera springt dorthin |
+| Befehlsknopf lange drücken | Kosten und Beschreibung anzeigen |
+
+Oben links gibt es Knöpfe für **Abwählen** (wie Esc), **Mehrfach** (Tippen fügt zur Auswahl hinzu bzw. entfernt), **Untätig** (mit Anzahl), **Zentrum** und **Armee**. Beim Bauen erscheint die Vorschau in der Bildmitte; mit dem Finger verschieben (Mauern: ziehen) und oben rechts mit **Bauen** bestätigen.
+
 ## Steuerung (Mac mit Maus oder Trackpad)
 
 | Eingabe | Wirkung |

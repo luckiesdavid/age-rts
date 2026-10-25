@@ -4191,6 +4191,18 @@ function setupInput() {
   });
   window.addEventListener('keyup', e => { INPUT.keys.delete(e.key.toLowerCase()); if (e.key === 'Meta' || e.key === 'Control') INPUT.keys.clear(); });
 
+  // versteckt: 5 schnelle Klicks auf den Goldzähler geben +1000 von jedem Rohstoff (nur Einzelspieler)
+  let goldClicks = [];
+  $('rGold').parentNode.addEventListener('click', () => {
+    if (!running || paused || !G || G.over || G.net) return;
+    const now = performance.now(); goldClicks = goldClicks.filter(t => now - t < 2000); goldClicks.push(now);
+    if (goldClicks.length < 5) return;
+    goldClicks = [];
+    const p = G.players[G.human];
+    for (const r of RES_TYPES) p.res[r] += 1000;
+    notifyLocal('Die Schatzkammer quillt über.', false);
+  });
+
   // Buttons
   $('btnPause').addEventListener('click', () => togglePause());
   $('btnMenu').addEventListener('click', () => { if (!paused) togglePause(); });

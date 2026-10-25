@@ -143,7 +143,9 @@ html, body {
   text-align: center; border: 1px solid #9c7c4a; border-radius: 4px; background: #fbf3dd; }
 #mpStatus { margin-top: 14px; min-height: 22px; text-align: center; font-size: 15px; }
 #mpStatus.err { color: #8a1d12; }
-#mpCode { font: bold 34px monospace; letter-spacing: 6px; color: #5a2a14; user-select: all; }
+#mpCode { font: bold 18px monospace; letter-spacing: 3px; color: #5a2a14; user-select: all; }
+#mpLink { margin: 8px auto 0; padding: 7px 10px; max-width: 100%; overflow-wrap: anywhere; font: 14px monospace; user-select: all;
+  background: #fbf3dd; border: 1px solid #9c7c4a; border-radius: 4px; }
 #mpLobby { margin-top: 10px; text-align: center; }
 #netWait { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 25; pointer-events: none;
   background: rgba(20,14,8,.85); border: 1px solid #a5463a; padding: 8px 18px; border-radius: 4px; font-size: 16px; }
@@ -4247,6 +4249,8 @@ const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.
 const NET_PROTO = 1;            // Protokollversion; beide Seiten müssen dieselbe Spielversion nutzen
 const NET_PREFIX = 'burgfeld-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// Öffentliche Adresse des Spiels (GitHub Pages) für Einladungslinks, wenn die Datei lokal geöffnet wurde
+const PUBLIC_URL = 'https://luckiesdavid.github.io/age-rts/';
 const NET = { peer: null, conn: null, role: null, me: 0, ls: null, code: '', ping: 0, pingT: null, stallT: 0, desyncShown: false, ready: false };
 
 function mpStatus(text, err) { const el = $('mpStatus'); el.innerHTML = text; el.classList.toggle('err', !!err); }
@@ -4271,6 +4275,22 @@ function peerOptions() {
     o.host = u.hostname; o.port = +u.port || (u.protocol === 'https:' ? 443 : 80); o.path = u.pathname || '/'; o.secure = u.protocol === 'https:';
   }
   return o;
+}
+function inviteLink(code) {
+  const base = /^https?:/.test(location.protocol) ? location.href.split('#')[0] : PUBLIC_URL;
+  const peer = /(?:^|[#&])(peer=[^&]+)/.exec(location.hash);
+  return base + '#join=' + code + (peer ? '&' + peer[1] : '');
+}
+function copyInvite(code) {
+  const link = inviteLink(code), btn = $('btnCopyLink');
+  const done = () => { btn.textContent = 'Kopiert ✓'; setTimeout(() => { if (btn.isConnected) btn.textContent = 'Link kopieren'; }, 2000); };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(link).then(done, () => fallback());
+  else fallback();
+  function fallback() { // file:// ohne Clipboard-API
+    const r = document.createRange(); r.selectNodeContents($('mpLink'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Link markiert – Strg/Cmd + C'; }
+  }
 }
 function genCode() {
   const a = new Uint32Array(6); crypto.getRandomValues(a);
@@ -4304,8 +4324,12 @@ async function netHost() {
     NET.peer = peer; NET.role = 'host'; NET.me = 0;
     peer.on('open', () => {
       NET.code = code;
-      const link = /^https?:/.test(location.protocol) ? `<br><small>oder Link schicken: <span style="user-select:all">${location.href.split('#')[0]}#join=${code}</span></small>` : '';
-      mpStatus(`Dein Spielcode:<br><span id="mpCode">${code}</span><br>Gib ihn deinem Mitspieler. Warte auf Verbindung …${link}`);
+      mpStatus(`Schick deinem Mitspieler diesen Einladungslink – ein Klick genügt zum Beitreten:
+        <div id="mpLink">${inviteLink(code)}</div>
+        <button class="bigbtn alt" id="btnCopyLink">Link kopieren</button>${navigator.share ? ' <button class="bigbtn alt" id="btnShareLink">Teilen …</button>' : ''}
+        <br><small>Oder Code eingeben lassen: <span id="mpCode">${code}</span></small><br>Warte auf Verbindung …`);
+      $('btnCopyLink').addEventListener('click', () => copyInvite(code));
+      if (navigator.share) $('btnShareLink').addEventListener('click', () => navigator.share({ title: 'Burgfeld', text: 'Spiel mit mir Burgfeld!', url: inviteLink(code) }).catch(() => {}));
     });
     peer.on('connection', conn => {
       if (NET.conn) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 500); }); return; }
@@ -4329,7 +4353,7 @@ async function netJoin() {
   const peer = new Peer(peerOptions());
   NET.peer = peer; NET.role = 'guest'; NET.me = 1; NET.code = code;
   peer.on('open', () => {
-    mpStatus('Suche Spiel ' + code + ' …');
+    mpStatus('Trete Spiel ' + code + ' bei …');
     const conn = peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
     netAttach(conn);
     setTimeout(() => { if (NET.conn === conn && !conn.open) { mpStatus('Keine Verbindung möglich (Zeitüberschreitung). Firewall oder Netzwerk blockiert WebRTC.', true); setMPBusy(false); } }, 20000);
@@ -4644,8 +4668,10 @@ function boot() {
   setupInput();
   updateMenuButtons();
   // Beim Schließen des Tabs den aktuellen Stand sichern
-  window.addEventListener('pagehide', () => { if (running && G && !G.over) saveGame('auto', true); });
+  window.addEventListener('pagehide', () => { if (running && G && !G.over && !G.net) saveGame('auto', true); });
   requestAnimationFrame(frame);
+  // Einladungslink (…#join=CODE): direkt beitreten
+  if (/(?:^|[#&])join=[A-Za-z0-9]{6}/.test(location.hash)) { showMPScreen(); netJoin(); }
 }
 boot();
 </script>

@@ -14,16 +14,16 @@ Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Graf
 
 Zwei Personen können gegeneinander spielen, auch wenn sie in verschiedenen Netzwerken sind (Internetverbindung nötig).
 
-1. Beide öffnen dieselbe Version von `index.html` und klicken auf **Mehrspieler über das Internet**.
-2. Eine Person klickt auf **Erstellen** und bekommt einen 6-stelligen Code (z. B. `K7MPQ2`).
-3. Die andere Person gibt den Code bei **Spiel beitreten** ein.
-4. Sobald beide verbunden sind, startet der Ersteller das Spiel (optional mit Karten-Seed). Der Ersteller spielt Blau, der Beitretende Rot.
+1. Eine Person öffnet das Spiel, klickt auf **Mehrspieler über das Internet** und dann auf **Erstellen**.
+2. Sie schickt den angezeigten **Einladungslink** (Knopf „Link kopieren“, z. B. per WhatsApp). Der Mitspieler muss nur auf den Link klicken und ist sofort verbunden – ohne Download und ohne Code abzutippen.
+3. Sobald beide verbunden sind, startet der Ersteller das Spiel. Karte und Seed bestimmt der Ersteller. Der Ersteller spielt Blau, der Beitretende Rot.
 
-Wird die Seite über einen Webserver ausgeliefert (z. B. GitHub Pages), kann der Ersteller auch einen Link `…/index.html#join=CODE` schicken.
+Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-rts/> (GitHub Pages). Alternativ kann der Mitspieler den 6-stelligen Code bei **Spiel beitreten** eingeben. Beide müssen dieselbe Spielversion verwenden; am einfachsten spielen beide die Online-Version.
 
 **Technik:** Die Browser verbinden sich direkt per WebRTC (Bibliothek [PeerJS](https://peerjs.com), wird nur im Mehrspielermodus aus dem CDN geladen). Der kostenlose öffentliche PeerJS-Server vermittelt nur den Verbindungsaufbau; STUN und TURN sorgen dafür, dass die Verbindung auch hinter Routern (NAT) und Firewalls zustande kommt. Das Spiel läuft im *deterministischen Lockstep*: Beide Rechner simulieren dasselbe Spiel, es werden nur die Befehle der Spieler übertragen (einige Bytes pro 100 ms). Befehle werden je nach gemessenem Ping 200–800 ms in der Zukunft eingeplant, damit sie bei beiden gleichzeitig ausgeführt werden. Eine Prüfsumme pro Sekunde erkennt, falls die Spielstände doch auseinanderlaufen.
 
 **Hinweise:**
+- Speichern und Laden gibt es nur im Einzelspieler.
 - Pause (Leertaste/P) gilt für beide. **Aufgeben & Hauptmenü** beendet das Spiel; der Mitspieler gewinnt.
 - Wechselt ein Spieler den Tab, hält der Browser das Spiel an; der Mitspieler sieht dann „Warte auf Mitspieler …“.
 - Eigener Vermittlungsserver statt des öffentlichen: `npx -p peer peerjs --port 9000` starten und das Spiel mit `index.html#peer=dein-server:9000` öffnen (beide Spieler).

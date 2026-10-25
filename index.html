@@ -238,6 +238,11 @@ html, body {
 #mpStatus { margin-top: 14px; min-height: 22px; text-align: center; font-size: 15px; }
 #mpStatus.err { color: #8a1d12; }
 #mpCode { font: bold 18px monospace; letter-spacing: 3px; color: #5a2a14; user-select: all; }
+#mpAdv { margin-top: 14px; font-size: 14px; }
+#mpAdv summary { cursor: pointer; color: #5a2a14; }
+#mpAdv .sub { margin-top: 8px; line-height: 1.45; }
+#mpAdv input { width: 130px; }
+#netTestOut { min-height: 18px; }
 #mpLink { margin: 8px auto 0; padding: 7px 10px; max-width: 100%; overflow-wrap: anywhere; font: 14px monospace; user-select: all;
   background: #fbf5e3; border: 1px solid #a88a56; border-radius: 3px; box-shadow: inset 0 1px 3px rgba(90,60,25,.2); }
 #mpLobby { margin-top: 12px; padding: 12px; text-align: center; border: 1px solid #c2a571; border-radius: 3px; background: rgba(255,251,238,.45); }
@@ -516,6 +521,16 @@ body.touch .touchKeys { display: block; }
       <button class="bigbtn" id="btnMPStart">Spiel starten</button>
     </div>
     <div style="text-align:center"><button class="bigbtn alt" id="btnMPBack">Zurück</button></div>
+    <details id="mpAdv">
+      <summary>Verbindungsprobleme? Netzwerktest und Relay-Server</summary>
+      <div class="sub">Klappt die Verbindung über das Internet nicht, hilft ein Relay-Server (TURN). Kostenlos z. B. bei
+        <a href="https://www.metered.ca/tools/openrelay/" target="_blank" rel="noopener">Metered Open Relay</a>: Konto anlegen und
+        App-Namen (aus <i>name</i>.metered.live) und API-Key hier eintragen. Es genügt, wenn der Ersteller das einträgt – der Einladungslink nimmt es mit.</div>
+      <div class="row">App-Name: <input id="turnApp" type="text" placeholder="meinspiel" autocomplete="off" spellcheck="false">
+        API-Key: <input id="turnKey" type="text" placeholder="Schlüssel" autocomplete="off" spellcheck="false"></div>
+      <div class="row"><button class="tbtn" id="btnTurnSave">Speichern</button><button class="tbtn" id="btnNetTest">Verbindung testen</button></div>
+      <div id="netTestOut" class="sub"></div>
+    </details>
     <h3>So funktioniert's</h3>
     <div class="keys" style="columns:1">
       Die Verbindung läuft direkt zwischen euren Browsern (WebRTC). Zum Verbinden wird kurz der öffentliche
@@ -5212,6 +5227,13 @@ function setupInput() {
   $('btnMP').addEventListener('click', showMPScreen);
   $('btnMPBack').addEventListener('click', () => { netClose(true); $('mpScreen').classList.add('hidden'); showMenu(); });
   $('btnHost').addEventListener('click', () => netHost());
+  $('btnNetTest').addEventListener('click', () => netShowTest());
+  $('btnTurnSave').addEventListener('click', () => {
+    const app = $('turnApp').value.trim().toLowerCase().replace(/\.metered\.live.*$/, ''), key = $('turnKey').value.trim();
+    try { if (app && key) localStorage.setItem('burgfeld.turn', JSON.stringify({ app, key })); else localStorage.removeItem('burgfeld.turn'); } catch (e) {}
+    NET.ice = null; netShowTest();
+  });
+  { const tc = turnConfig(); if (tc && tc.from !== 'built-in') { $('turnApp').value = tc.app; $('turnKey').value = tc.key; } }
   $('btnMPResume').addEventListener('click', netResumeSaved);
   $('btnMPResumeDel').addEventListener('click', () => { if (confirm('Unterbrochenes Mehrspieler-Spiel wirklich löschen?')) { deleteMPSave(); renderMPResume(); } });
   $('btnJoin').addEventListener('click', () => netJoin());
@@ -5298,8 +5320,76 @@ function loadPeerJS() {
     document.head.appendChild(s);
   })), Promise.reject()).catch(() => { throw new Error('PeerJS konnte nicht geladen werden – besteht eine Internetverbindung?'); });
 }
+/* ---------- STUN/TURN ----------
+   STUN findet die öffentliche Adresse hinter dem Router. Klappt keine direkte Verbindung (z. B. Mobilfunk,
+   strenge Firewalls), läuft sie über einen TURN-Relay. Die TURN-Server von PeerJS sind oft nicht erreichbar,
+   deshalb kann ein eigener Metered-Zugang eingetragen werden (im Spiel, per #turn=app:key oder hier fest). */
+const METERED_APP = 'aoe-burg', METERED_KEY = 'JyCFAnseTQVVAsSSfv8mQ_eCE9trTfH36QjJ3vnLWk9Yb_om'; // Metered-Zugang des Projekts (für den Browser gedacht)
+const STUN_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
+const PEERJS_TURN = { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' };
+function turnConfig() {
+  const m = /(?:^|[#&])turn=([a-z0-9-]+):([A-Za-z0-9_-]+)/.exec(location.hash);
+  if (m) return { app: m[1], key: m[2], from: 'link' };
+  try { const c = JSON.parse(localStorage.getItem('burgfeld.turn')); if (c && c.app && c.key) return { app: c.app, key: c.key, from: 'local' }; } catch (e) {}
+  if (METERED_APP && METERED_KEY) return { app: METERED_APP, key: METERED_KEY, from: 'built-in' };
+  return null;
+}
+// ICE-Server einmal laden (Metered liefert Zugangsdaten über eine Web-Schnittstelle)
+async function netLoadIce(force) {
+  if (NET.ice && !force) return NET.ice;
+  const list = STUN_SERVERS.slice(); let relay = 'peerjs';
+  const tc = turnConfig();
+  if (tc) {
+    try {
+      const r = await fetch(`https://${tc.app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(tc.key)}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const servers = await r.json();
+      if (Array.isArray(servers) && servers.length) { list.push(...servers); relay = 'metered'; }
+    } catch (e) { console.warn('Metered-TURN nicht verfügbar:', e); relay = 'metered-error'; }
+  }
+  list.push(PEERJS_TURN);
+  NET.ice = { iceServers: list, relay };
+  return NET.ice;
+}
+// Netzwerktest: Welche Verbindungswege findet der Browser? host = lokal, srflx = über STUN, relay = über TURN
+function netTestIce(config, ms) {
+  return new Promise(done => {
+    const found = { host: false, srflx: false, relay: false };
+    let pc;
+    try { pc = new RTCPeerConnection({ iceServers: config.iceServers }); } catch (e) { done(found); return; }
+    const finish = () => { clearTimeout(t); try { pc.close(); } catch (e) {} done(found); };
+    const t = setTimeout(finish, ms || 7000);
+    pc.onicecandidate = ev => {
+      if (!ev.candidate) { finish(); return; }
+      const m = / typ (host|srflx|prflx|relay)/.exec(ev.candidate.candidate);
+      if (m) found[m[1] === 'prflx' ? 'srflx' : m[1]] = true;
+      if (found.relay && found.srflx) finish();
+    };
+    pc.createDataChannel('test');
+    pc.createOffer().then(o => pc.setLocalDescription(o)).catch(finish);
+  });
+}
+function netTestText(f, relay) {
+  const ok = b => b ? '✓' : '✗';
+  let txt = `Netzwerktest: lokal ${ok(f.host)} · öffentliche Adresse (STUN) ${ok(f.srflx)} · Relay-Server (TURN) ${ok(f.relay)}`;
+  if (!f.relay) txt += relay === 'metered-error' ? ' – der eingetragene Metered-Zugang funktioniert nicht (App-Name/API-Key prüfen).'
+    : relay === 'peerjs' ? ' – es ist kein funktionierender Relay-Server erreichbar. Unter „Verbindungsprobleme?“ einen kostenlosen Metered-Zugang eintragen.'
+    : ' – Relay-Server nicht erreichbar (Firewall?).';
+  else if (relay === 'metered') txt += ' – Relay über Metered ist bereit.';
+  return txt;
+}
+async function netShowTest(prefix) {
+  const out = $('netTestOut'); out.textContent = 'Teste Verbindungswege …';
+  const ice = await netLoadIce(true);
+  const f = await netTestIce(ice);
+  const txt = netTestText(f, ice.relay);
+  out.textContent = txt;
+  if (prefix) mpStatus(prefix + '<br><small>' + txt.replace(/</g, '&lt;') + '</small>', true);
+  return f;
+}
 function peerOptions() {
   const o = { debug: 1 };
+  if (NET.ice) o.config = { iceServers: NET.ice.iceServers };
   const m = /(?:^|[#&])peer=([^&]+)/.exec(location.hash);
   if (m) { // eigener PeerJS-Server: host[:port][/pfad]
     const u = new URL((/^https?:/.test(m[1]) ? '' : 'http://') + decodeURIComponent(m[1]));
@@ -5310,7 +5400,8 @@ function peerOptions() {
 function inviteLink(code) {
   const base = /^https?:/.test(location.protocol) ? location.href.split('#')[0] : PUBLIC_URL;
   const peer = /(?:^|[#&])(peer=[^&]+)/.exec(location.hash);
-  return base + '#join=' + code + (peer ? '&' + peer[1] : '');
+  const tc = turnConfig();
+  return base + '#join=' + code + (peer ? '&' + peer[1] : '') + (tc && tc.from !== 'built-in' ? '&turn=' + tc.app + ':' + tc.key : '');
 }
 function copyInvite(code) {
   const link = inviteLink(code), btn = $('btnCopyLink');
@@ -5387,6 +5478,7 @@ async function netHost(resume) {
   netClose(false); setMPBusy(true);
   mpStatus('Verbinde mit dem Vermittlungsserver …');
   try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
+  await netLoadIce();
   NET.role = 'host'; NET.me = 0; NET.resume = resume || null;
   const tryOpen = attempt => {
     // beim Fortsetzen den alten Code wiederverwenden, damit der alte Einladungslink weiter funktioniert
@@ -5412,12 +5504,23 @@ async function netJoin() {
   netClose(false); setMPBusy(true);
   mpStatus('Verbinde …');
   try { await loadPeerJS(); } catch (e) { mpStatus(e.message, true); setMPBusy(false); return; }
+  await netLoadIce();
   NET.role = 'guest'; NET.me = 1; NET.code = code;
   netGuestPeer(() => {
     mpStatus('Trete Spiel ' + code + ' bei …');
     const conn = NET.peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
     netAttach(conn);
-    setTimeout(() => { if (NET.conn === conn && !conn.open) { mpStatus('Keine Verbindung möglich (Zeitüberschreitung). Firewall oder Netzwerk blockiert WebRTC.', true); setMPBusy(false); } }, 20000);
+    // Scheitert der Verbindungsaufbau (ICE „failed“) oder dauert er zu lange: Netzwerktest zeigen
+    const t0 = performance.now();
+    const watch = setInterval(() => {
+      if (NET.conn !== conn || conn.open) { clearInterval(watch); return; }
+      const pc = conn.peerConnection, st = pc && pc.iceConnectionState;
+      if (st === 'failed' || performance.now() - t0 > 20000) {
+        clearInterval(watch); setMPBusy(false);
+        netShowTest('Keine Verbindung zum Ersteller möglich. Eure Netzwerke lassen keine direkte Verbindung zu, und über einen Relay-Server klappte es auch nicht.');
+        try { conn.close(); } catch (e) {}
+      } else if (st === 'checking') mpStatus('Verbindungsweg wird gesucht …');
+    }, 500);
   }, e => { if (NET.recon || (running && G && G.net)) return; mpStatus(netErrorText(e), true); setMPBusy(false); });
 }
 function netIncoming(conn) {

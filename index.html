@@ -196,6 +196,7 @@ html, body {
   transition: filter .12s, transform .06s;
 }
 .bigbtn:hover { filter: brightness(1.12); }
+.bigbtn:disabled { opacity: .45; cursor: default; filter: none; }
 .bigbtn:active { transform: translateY(1px); filter: brightness(.95); }
 .bigbtn:focus-visible, .diff:focus-visible, .sbtn:focus-visible, .help summary:focus-visible { outline: 2px solid #c9a24f; outline-offset: 2px; }
 .bigbtn.alt {
@@ -206,6 +207,21 @@ html, body {
 .keys { font-size: 13px; line-height: 1.6; columns: 2; column-gap: 28px; color: #3a2814; }
 .keys b { color: #6b3018; }
 /* Hauptmenü */
+/* Spielerliste: je Spieler eine Karte mit Farbleiste; Team per Klick wechseln */
+.plist { display: flex; gap: 8px; justify-content: center; }
+.plc { position: relative; flex: 1; min-width: 0; max-width: 150px; padding: 9px 6px 8px; text-align: center; color: var(--ink);
+  background: linear-gradient(#f9f0da, #ead9b0); border: 1px solid #b4955f; border-top: 5px solid var(--pc); border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 2px 4px rgba(80,50,20,.16); font: 700 14px/1.2 Cinzel, Georgia, serif; }
+.plc small { display: block; margin-top: 4px; font: italic 12px/1.25 Georgia, 'Iowan Old Style', 'Times New Roman', serif; color: #6b4a2b; }
+.plc .team { display: block; width: 100%; margin-top: 5px; padding: 4px 2px; cursor: pointer; border-radius: 3px; border: 1px solid #a88a56;
+  font: 700 11.5px/1.2 Cinzel, Georgia, serif; color: #7a1d16; background: #fbf5e3; }
+.plc .team.ally { color: #1f4f8a; }
+.plc .team:hover { border-color: #7d2412; }
+.plc .x { position: absolute; top: 1px; right: 3px; padding: 0 3px; border: 0; background: none; cursor: pointer; color: #7a1d16; font: 700 15px/1 Georgia, serif; }
+.plc.add { cursor: pointer; border-style: dashed; border-top: 1px dashed #b4955f; background: rgba(255,251,238,.35); color: #6b3018; box-shadow: none; }
+.plc.add:hover { border-color: #8a6a3a; background: rgba(255,251,238,.7); }
+.teamHint { margin-top: 7px; text-align: center; font-size: 13px; font-style: italic; color: #6b4a2b; min-height: 16px; }
+.teamHint.warn { color: #9a2a14; }
 .startPanel { width: min(660px, calc(100vw - 44px)); display: grid; grid-template-areas: "brand" "opts" "acts" "help"; }
 .brand { grid-area: brand; }
 .startOpts { grid-area: opts; } .startOpts h3:first-child { margin-top: 4px; }
@@ -353,6 +369,8 @@ body.touch .touchKeys { display: block; }
   .stats td, .stats th { padding: 3px 10px; }
   .help { margin-top: 12px; }
   .row { margin-top: 10px; }
+  .plc { padding: 6px 4px 5px; font-size: 12.5px; } .plc small { font-size: 11px; margin-top: 2px; } .plc .team { margin-top: 3px; padding: 3px 1px; }
+  .teamHint { margin-top: 4px; font-size: 12px; }
 }
 @media (max-height: 540px) and (min-width: 601px) {
   .startPanel { width: min(880px, calc(100vw - 44px)); grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: 28px;
@@ -395,6 +413,7 @@ body.touch .touchKeys { display: block; }
   .diffs { gap: 6px; }
   .diff { padding: 10px 3px; font-size: 11.5px; letter-spacing: 0; }
   .diff small { font-size: 11px; }
+  .plist { gap: 5px; } .plc { font-size: 11.5px; padding: 8px 2px 6px; } .plc .team { font-size: 10.5px; }
   .keys { columns: 1; }
   .mpCols { flex-direction: column; }
   .bigbtn { padding: 12px 40px; }
@@ -457,6 +476,9 @@ body.touch .touchKeys { display: block; }
       <button class="diff sel" data-d="medium">Mittel<small>Türme, Palisaden, Rammen</small></button>
       <button class="diff" data-d="hard">Schwer<small>Steinmauern, Katapulte</small></button>
     </div>
+    <h3>Spieler</h3>
+    <div class="plist" id="playerList"></div>
+    <div class="teamHint" id="teamHint"></div>
     <h3>Karte</h3>
     <div class="diffs" id="mapChoice">
       <button class="diff" data-m="desert">Wüste<small>Oasen, wenig Holz, mehr Gold</small></button>
@@ -625,19 +647,22 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '2.2';
+const GAME_VERSION = '2.4';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
 const SIM_DT = 1 / 30;        // feste Simulationsschrittweite
 const CARRY = 10;             // Traglast Dorfbewohner
 const MAX_POP = 200;
-const GAIA = 2;               // neutrale Tiere
+const MAX_PLAYERS = 4;        // Einzelspieler: du und bis zu drei Computerspieler
+const GAIA = MAX_PLAYERS;     // neutrale Tiere (alle Spieler-IDs sind kleiner)
 const RES_TYPES = ['food', 'wood', 'gold', 'stone'];
 const RES_DE = { food: 'Nahrung', wood: 'Holz', gold: 'Gold', stone: 'Stein' };
 const PLAYER_COLORS = [
   { main: '#2f6fd6', light: '#7fb0ff', dark: '#1a3f80', name: 'Blau' },
   { main: '#d23a2e', light: '#ff8a7a', dark: '#7d1d16', name: 'Rot' },
+  { main: '#3f9a3a', light: '#8fdc7f', dark: '#1f5a1c', name: 'Grün' },
+  { main: '#d9a21e', light: '#ffd76a', dark: '#7d5a0c', name: 'Gelb' },
   { main: '#c8b98a', light: '#e8dcb5', dark: '#8a7a50', name: 'Natur' },
 ];
 
@@ -867,7 +892,8 @@ function removeResource(r) {
   G.resDirty = true; G.shadowDirty = true;
 }
 
-function generateMap(seed, mapType) {
+// four: mehr als zwei Spieler – Karte an beiden Achsen gespiegelt, Basen in allen vier Ecken
+function generateMap(seed, mapType, four) {
   const M = MAPS[mapType] || MAPS.balanced;
   const rnd = mulberry32(seed);
   const terr = G.terr;
@@ -883,24 +909,26 @@ function generateMap(seed, mapType) {
   };
   const kind = new Uint8Array(NN); // 0 Gras, 1 Wasser, 2 Fels, 3 Baum
   const B0 = { x: 8, y: 8 }; // Basis Spieler 0 (Spieler 1 punktgespiegelt)
-  const mirror = i => (N - 1 - (i % N)) + (N - 1 - Math.floor(i / N)) * N;
+  // Spiegelbilder einer Kachel: zu zweit punktgespiegelt, sonst zusätzlich an beiden Achsen
+  const imgs = (x, y) => four ? [[x, y], [N - 1 - x, y], [x, N - 1 - y], [N - 1 - x, N - 1 - y]] : [[x, y], [N - 1 - x, N - 1 - y]];
+  const setK = (i, k) => { for (const [x, y] of imgs(i % N, Math.floor(i / N))) kind[y * N + x] = k; };
 
-  // Hälfte erzeugen, andere spiegeln (faire Karte)
+  // Teil erzeugen, Rest spiegeln (faire Karte)
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const i = y * N + x; const m = mirror(i);
-    if (m < i) continue;
+    const i = y * N + x;
+    if (imgs(x, y).some(([a, b]) => b * N + a < i)) continue;
     const n = noiseAt(x, y, 7.5) * 0.7 + noiseAt(x + 31, y + 17, 3.2) * 0.3;
     let k = 0;
     if (n > M.forest) k = 3;
     if (x === 0 || y === 0 || x === N - 1 || y === N - 1) k = rnd() < (M.desert ? 0.15 : 0.5) ? 3 : 0;
-    kind[i] = k; kind[m] = k;
+    setK(i, k);
   }
   // Seen und Felsen
   const blob = (cx, cy, r, k) => {
     for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
       if (!inMap(x, y)) continue;
       const d = dist(x, y, cx, cy) + (rnd() - 0.5) * 1.3;
-      if (d < r) { const i = y * N + x; kind[i] = k; kind[mirror(i)] = k; }
+      if (d < r) setK(y * N + x, k);
     }
   };
   blob(22 + rnd() * 6, 44 + rnd() * 6, (3 + rnd() * 2) * M.lakes, 1);
@@ -913,7 +941,7 @@ function generateMap(seed, mapType) {
         if (!inMap(x, y)) continue;
         const d = dist(x, y, cx, cy), i = y * N + x;
         const k2 = d < r ? 1 : d < r + 2.2 && rnd() < 0.55 ? 3 : -1;
-        if (k2 >= 0) { kind[i] = k2; kind[mirror(i)] = k2; }
+        if (k2 >= 0) setK(i, k2);
       }
     }
   }
@@ -922,7 +950,7 @@ function generateMap(seed, mapType) {
   const clear = (cx, cy, r) => {
     for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
       if (!inMap(x, y)) continue;
-      if (dist(x, y, cx, cy) <= r) { const i = y * N + x; kind[i] = 0; kind[mirror(i)] = 0; }
+      if (dist(x, y, cx, cy) <= r) setK(y * N + x, 0);
     }
   };
   clear(B0.x, B0.y, 10);
@@ -936,14 +964,14 @@ function generateMap(seed, mapType) {
   const woodSide = rnd() < 0.5;
   for (let a = 0; a < 7; a++) for (let b = 0; b < 3; b++) {
     const x = woodSide ? 16 + b : 3 + a, y = woodSide ? 3 + a : 16 + b;
-    const i = y * N + x; kind[i] = 3; kind[mirror(i)] = 3;
+    setK(y * N + x, 3);
   }
   // Verbindung zwischen Basen sicherstellen (Diagonale + Breite 3)
   for (let s = 0; s < N; s++) for (let o = -1; o <= 1; o++) {
     const x = s, y = clamp(s + o, 0, N - 1);
     const i = y * N + x; if (kind[i] !== 0 && dist(x, y, 32, 32) < 40) {
       if (kind[i] === 1 && Math.abs(o) === 1) continue;
-      kind[i] = 0; kind[mirror(i)] = 0;
+      setK(i, 0);
     }
   }
 
@@ -958,7 +986,7 @@ function generateMap(seed, mapType) {
   }
 
   // Basisressourcen relativ zur Basis platzieren (für beide Spieler gespiegelt)
-  const place = (x, y, fn) => { fn(x, y); fn(N - 1 - x, N - 1 - y); };
+  const place = (x, y, fn) => { for (const [a, b] of imgs(x, y)) fn(a, b); };
   const freeAt = (x, y) => inMap(x, y) && !G.terr[y * N + x] && !G.res[y * N + x];
   const goldSpot = woodSide ? [4, 15] : [15, 4];
   const stoneSpot = woodSide ? [13, 14] : [14, 13];
@@ -998,7 +1026,8 @@ function generateMap(seed, mapType) {
     }
   });
   G.resDirty = true;
-  return { bases: [{ x: 6, y: 6 }, { x: N - 10, y: N - 10 }] };
+  // Basis je Ecke (Reihenfolge wie CORNERS)
+  return { bases: [{ x: 6, y: 6 }, { x: N - 10, y: N - 10 }, { x: N - 10, y: 6 }, { x: 6, y: N - 10 }] };
 }
 
 /* ============================ 4. WEGFINDUNG ============================ */
@@ -1012,7 +1041,7 @@ function updateTile(i) {
   G.gate[i] = (b && BUILDINGS[b.type].gate) ? b.owner : -1;
   G.mmDirty = true;
 }
-function passable(i, owner) { return !G.block[i] || G.gate[i] === owner; }
+function passable(i, owner) { const g = G.gate[i]; return !G.block[i] || g === owner || (g >= 0 && allies(g, owner)); }
 function passableXY(x, y, owner) { return inMap(x, y) && passable(y * N + x, owner); }
 
 // Binärer Heap auf Typed Arrays
@@ -1041,7 +1070,7 @@ const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.4142], [1, 
 // Zusatzkosten, wenn eine Kachel eine feindliche Mauer ist (für "Mauer brechen")
 function wallBreakCost(i, owner) {
   const b = G.bld[i];
-  if (!b || b.owner === owner || b.owner === GAIA) return -1;
+  if (!b || !foes(owner, b.owner)) return -1;
   const d = BUILDINGS[b.type];
   if (!d.wall) return -1;
   return (d.stone ? 16 : 7) + b.hp / 150;
@@ -1162,19 +1191,22 @@ function spawnUnit(type, owner, x, y) {
   const u = {
     id: G.nextId++, kind: 'unit', type, def: d, owner, x, y, hp: d.hp, maxHp: d.hp, dead: false,
     order: null, path: null, pi: 0, dest: null, carry: 0, carryType: null, carryFrac: 0,
-    cd: rnd() * 0.5, scanT: rnd() * 0.5, facing: owner === 1 ? Math.PI * 1.25 : Math.PI * 0.25,
+    cd: rnd() * 0.5, scanT: rnd() * 0.5, facing: Math.PI * (owner < GAIA ? CORNERS[G.players[owner].corner].f : 0.25),
     anim: rnd() * 10, moving: false, atkAnim: 0, stuckT: 0, lastX: x, lastY: y, target: null, guard: null,
     aggr: false, pending: null, queued: false, pathT: 0, pathFails: 0, lastAttacker: null, wanderT: 3 + rnd() * 6,
   };
   G.units.push(u); G.byId.set(u.id, u);
-  if (owner < 2) {
+  if (owner < GAIA) {
     const p = G.players[owner]; p.pop += d.pop; p.stats.trained++;
     if (type === 'villager') { u.hp = u.maxHp = d.hp + (p.villHp || 0); if (p.villSpeed > 1) u.spd = d.speed * p.villSpeed; }
   }
   return u;
 }
 function alive(e) { return e && !e.dead; }
-function isEnemy(a, b) { return a.owner !== b.owner && a.owner < 2 && b.owner < 2; }
+// Teams: Spieler mit gleichem team sind verbündet (greifen sich nicht an, dürfen durch die Tore des anderen)
+function foes(a, b) { return a !== b && a >= 0 && b >= 0 && a < GAIA && b < GAIA && G.players[a].team !== G.players[b].team; }
+function allies(a, b) { return a >= 0 && b >= 0 && a < GAIA && b < GAIA && G.players[a].team === G.players[b].team; }
+function isEnemy(a, b) { return foes(a.owner, b.owner); }
 
 /* ---------- Wege anfordern / folgen ---------- */
 function goalForPoint(x, y) { return { x: Math.floor(x), y: Math.floor(y), w: 1, h: 1, r: 0, px: x, py: y }; }
@@ -1469,7 +1501,7 @@ function engage(u, t, dt, breakWalls) {
 function handleBlocked(u, mayBreak) {
   const i = u.path[u.pi];
   const b = G.bld[i];
-  if (mayBreak && b && b.owner !== u.owner && b.owner < 2 && (u.def.atk > 0 || u.def.bldOnly)) {
+  if (mayBreak && b && foes(u.owner, b.owner) && (u.def.atk > 0 || u.def.bldOnly)) {
     u.target = b; return;
   }
   u.path = null; u.pathT = -99;
@@ -1488,12 +1520,12 @@ function performAttack(u, t) {
 }
 // owner: Besitzer des Angreifers (Schmiede-Verbesserungen und Wahrzeichen-Boni gelten nur für Militär)
 function calcDamage(src, t, owner) {
-  const up = src.military && !src.siege && owner < 2 ? G.players[owner] : null;
+  const up = src.military && !src.siege && owner < GAIA ? G.players[owner] : null;
   if (t.kind === 'bld') {
     const base = src.atkBld !== undefined ? src.atkBld : src.atk;
     const rs = BUILDINGS[t.type].resist || BLD_RES_DEF;
     const f = rs[src.atkType] !== undefined ? rs[src.atkType] : 1;
-    return Math.max(0.1, base * f * (src.military && owner < 2 ? G.players[owner].atkMult || 1 : 1));
+    return Math.max(0.1, base * f * (src.military && owner < GAIA ? G.players[owner].atkMult || 1 : 1));
   }
   if (src.bldOnly) return 0;
   let base = src.atk + ((src.bonusVs && src.bonusVs[t.type]) || 0);
@@ -1501,16 +1533,16 @@ function calcDamage(src, t, owner) {
   const f = (t.def.resist && t.def.resist[src.atkType] !== undefined) ? t.def.resist[src.atkType] : 1;
   let dmg = base * f;
   // Rüstung aus der Schmiede: zieht Schaden ab (nur Militär, keine Belagerung)
-  if (t.def.military && !t.def.siege && t.owner < 2) { const a = G.players[t.owner].armUp; if (a && a[src.atkType]) dmg -= a[src.atkType]; }
+  if (t.def.military && !t.def.siege && t.owner < GAIA) { const a = G.players[t.owner].armUp; if (a && a[src.atkType]) dmg -= a[src.atkType]; }
   return Math.max(0.2, dmg);
 }
 function applyDamage(t, amount, src) {
   if (!alive(t) || amount <= 0) return;
   t.hp -= amount;
   if (t.kind === 'unit' && src && alive(src)) t.lastAttacker = src;
-  if (t.kind === 'bld' && src && src.owner < 2) t.lastHit = G.time;
+  if (t.kind === 'bld' && src && src.owner < GAIA) t.lastHit = G.time;
   if (t.hp <= 0) {
-    if (src && src.owner < 2 && t.owner < 2) G.players[src.owner].stats[t.kind === 'bld' ? 'razed' : 'kills']++;
+    if (src && src.owner < GAIA && t.owner < GAIA) G.players[src.owner].stats[t.kind === 'bld' ? 'razed' : 'kills']++;
     if (t.kind === 'unit') killUnit(t); else destroyBuilding(t);
   }
 }
@@ -1518,7 +1550,7 @@ function killUnit(u) {
   if (u.dead) return;
   u.dead = true;
   if (u.order && u.order.t === 'gather' && u.order.res && u.order.res.kind === 'bld' && u.order.res.farmer === u.id) u.order.res.farmer = 0;
-  if (u.owner < 2) { G.players[u.owner].pop -= u.def.pop; G.players[u.owner].stats.lost++; }
+  if (u.owner < GAIA) { G.players[u.owner].pop -= u.def.pop; G.players[u.owner].stats.lost++; }
   if (u.type === 'deer') {
     const tx = clamp(Math.floor(u.x), 0, N - 1), ty = clamp(Math.floor(u.y), 0, N - 1);
     if (!G.res[ty * N + tx]) u.carcass = makeResource('food', 'carcass', tx, ty, 160);
@@ -1560,7 +1592,7 @@ function findResource(sub, x, y, maxD, owner) {
 function dangerAt(owner, x, y) {
   // feindliche Türme/Dorfzentren in der Nähe meiden
   for (const b of G.buildings) {
-    if (b.dead || b.owner === owner || b.owner >= 2 || !b.built) continue;
+    if (b.dead || !foes(owner, b.owner) || !b.built) continue;
     const a = BUILDINGS[b.type].attack; if (!a) continue;
     if (distToRect(x, y, b.tx, b.ty, b.w, b.h) < a.range + 1) return true;
   }
@@ -1892,8 +1924,8 @@ function placeBuilding(type, tx, ty, owner, instant, rot) {
 function completeBuilding(b, silent) {
   b.built = true; b.progress = 1; G.shadowDirty = true;
   const d = BUILDINGS[b.type];
-  if (d.pop && b.owner < 2) G.players[b.owner].popCap += d.pop;
-  if (d.landmark && b.owner < 2) {
+  if (d.pop && b.owner < GAIA) G.players[b.owner].popCap += d.pop;
+  if (d.landmark && b.owner < GAIA) {
     const p = G.players[b.owner];
     if (d.landmark > p.age) {
       p.age = d.landmark;
@@ -1905,7 +1937,7 @@ function completeBuilding(b, silent) {
   if (!silent && b.owner === G.human) {
     if (!d.wall && !d.farm) notify(d.name + ' fertiggestellt.');
   }
-  if (b.owner < 2) G.players[b.owner].stats.built++;
+  if (b.owner < GAIA) G.players[b.owner].stats.built++;
 }
 function removeBuildingSilently(b) {
   b.dead = true; G.shadowDirty = true;
@@ -1918,11 +1950,11 @@ function destroyBuilding(b) {
   if (b.dead) return;
   const d = BUILDINGS[b.type];
   removeBuildingSilently(b);
-  if (b.built && d.pop && b.owner < 2) G.players[b.owner].popCap -= d.pop;
+  if (b.built && d.pop && b.owner < GAIA) G.players[b.owner].popCap -= d.pop;
   // Warteschlange erstatten
-  if (b.owner < 2) for (const q of b.queue) { refund(G.players[b.owner], qCost(q), 1); if (q.tech) delete G.players[b.owner].researching[q.tech]; }
+  if (b.owner < GAIA) for (const q of b.queue) { refund(G.players[b.owner], qCost(q), 1); if (q.tech) delete G.players[b.owner].researching[q.tech]; }
   b.queue.length = 0;
-  if (b.built && d.landmark && b.owner < 2) recalcPlayer(b.owner); // Bonus geht mit dem Wahrzeichen verloren
+  if (b.built && d.landmark && b.owner < GAIA) recalcPlayer(b.owner); // Bonus geht mit dem Wahrzeichen verloren
   for (let k = 0; k < Math.min(14, 3 + b.w * b.h * 2); k++) addEffect('debris', b.tx + Math.random() * b.w, b.ty + Math.random() * b.h);
   addEffect('rubble', b.x, b.y, b);
   if (b.owner === G.human && !d.line) notify(d.name + ' zerstört!', true);
@@ -2148,12 +2180,12 @@ function updateProjectiles(dt) {
         addEffect('boom', p.tx, p.ty);
         const sr = p.def.splash || 1;
         queryUnits(p.tx, p.ty, sr, u => {
-          if (u.owner === p.owner || u.owner >= 2) return;
+          if (!foes(p.owner, u.owner)) return;
           const fall = 1 - dist(u.x, u.y, p.tx, p.ty) / sr * 0.5;
           applyDamage(u, calcDamage(p.def, u, p.owner) * fall, alive(p.src) ? p.src : null);
         });
         queryBuildings(p.tx, p.ty, sr * 0.6, b => {
-          if (b.owner === p.owner || b.owner >= 2) return;
+          if (!foes(p.owner, b.owner)) return;
           applyDamage(b, calcDamage(p.def, b, p.owner), alive(p.src) ? p.src : null);
         });
       } else if (alive(p.target)) {
@@ -2185,14 +2217,20 @@ function updateEffects(dt) {
   }
 }
 
-function newPlayer(i) {
-  return { id: i, res: { food: 200, wood: 200, gold: 100, stone: 100 }, pop: 0, popCap: 0, gatherMult: 1, prodMult: 1,
+// Startecken: x/y = 1 heißt rechter bzw. unterer Kartenrand; f = Blickrichtung zur Kartenmitte (in π)
+const CORNERS = [{ x: 0, y: 0, f: 0.25 }, { x: 1, y: 1, f: 1.25 }, { x: 1, y: 0, f: 0.75 }, { x: 0, y: 1, f: 1.75 }];
+function newPlayer(i, team, corner) {
+  return { id: i, team: team === undefined ? i : team, corner: corner === undefined ? i : corner, res: { food: 200, wood: 200, gold: 100, stone: 100 }, pop: 0, popCap: 0, gatherMult: 1, prodMult: 1,
     stats: { gathered: 0, trained: 0, lost: 0, kills: 0, razed: 0, built: 0 }, defeated: false,
     age: 0, techs: {}, researching: {}, mkt: { food: 100, wood: 100, stone: 100 } };
 }
 // Spielstände ohne Zeitalter (ältere Version) auf den aktuellen Stand bringen
 function migrateGame(g) {
   const prev = G; G = g;
+  if (g.players.length === 2 && g.players[0].team === undefined) { // vor Version 2.4: Natur hatte die ID 2
+    for (const u of g.units) if (u.owner === 2) u.owner = GAIA;
+    for (const p of g.players) { p.team = p.id; p.corner = p.id; }
+  }
   for (const p of g.players) {
     if (p.age === undefined) { p.age = 0; p.techs = {}; p.researching = {}; p.mkt = { food: 100, wood: 100, stone: 100 }; }
     if (!g.buildings.some(b => !b.dead && b.owner === p.id && b.capital)) {
@@ -2203,21 +2241,31 @@ function migrateGame(g) {
   }
   G = prev;
 }
+// Ecken verteilen: zwei Spieler diagonal (wie bisher); sonst dein Team links, die anderen von rechts her
+function assignCorners(teams) {
+  if (teams.length === 2) return [0, 1];
+  const order = [0, 3, 1, 2]; let front = 0, back = order.length - 1;
+  return teams.map(t => t === teams[0] ? order[front++] : order[back--]);
+}
+// opts.ai: Computerspieler als Liste von { team } (Spieler 1, 2, …); ohne Angabe ein Gegner wie bisher
 function newGame(seed, diff, opts) {
   opts = opts || {};
+  const aiList = opts.net ? [] : (opts.ai && opts.ai.length ? opts.ai.slice(0, MAX_PLAYERS - 1) : [{ team: 1 }]);
+  const teams = opts.net ? [0, 1] : [0].concat(aiList.map(a => a.team));
+  const corners = assignCorners(teams);
   G = {
     seed, diff, map: MAPS[opts.map] ? opts.map : 'balanced', time: 0, nextId: 1, human: opts.headlessBothAI ? -1 : (opts.human || 0), headless: !!opts.headless,
     net: !!opts.net, rngS: (seed ^ 0x5bd1e995) >>> 0,
     terr: new Uint8Array(NN), forest: new Uint8Array(NN), block: new Uint8Array(NN), gate: new Int8Array(NN).fill(-1),
     res: new Array(NN).fill(null), bld: new Array(NN).fill(null),
     resources: [], units: [], buildings: [], projectiles: [], effects: [], byId: new Map(), pathQueue: [],
-    grid: Array.from({ length: CN * CN }, () => []), players: [newPlayer(0), newPlayer(1)],
+    grid: Array.from({ length: CN * CN }, () => []), players: teams.map((t, i) => newPlayer(i, t, corners[i])),
     explored: new Uint8Array(NN), visible: new Uint8Array(NN), mmDirty: true, over: null, ais: [], groups: {},
     tick: 0, msgs: [],
   };
-  const info = generateMap(seed, G.map);
-  for (let p = 0; p < 2; p++) {
-    const b = info.bases[p];
+  const info = generateMap(seed, G.map, teams.length > 2);
+  for (let p = 0; p < G.players.length; p++) {
+    const b = info.bases[G.players[p].corner];
     const tc = placeBuilding('tc', b.x, b.y, p, true);
     tc.capital = true; // Hauptstadt-Dorfzentrum: zählt als Wahrzeichen
     recalcPlayer(p);
@@ -2229,9 +2277,11 @@ function newGame(seed, diff, opts) {
   }
   if (!opts.net) { // Mehrspieler: beide Seiten menschlich, keine KI
     const dd = DIFFS[diff];
-    G.players[1].gatherMult = dd.gather;
-    G.players[1].res.food += dd.startBonus; G.players[1].res.wood += dd.startBonus;
-    G.ais.push(createAI(1, diff));
+    for (let p = 1; p < G.players.length; p++) {
+      G.players[p].gatherMult = dd.gather;
+      G.players[p].res.food += dd.startBonus; G.players[p].res.wood += dd.startBonus;
+      G.ais.push(createAI(p, diff));
+    }
   }
   if (opts.headlessBothAI) { G.ais.push(createAI(0, opts.p0diff || 'medium')); G.players[0].gatherMult = DIFFS[opts.p0diff || 'medium'].gather; }
   rebuildGrid();
@@ -2266,7 +2316,7 @@ function simStep(dt) {
 // Dom: heilt eigene Einheiten in der Nähe (einmal pro Sekunde)
 function landmarkHeal() {
   for (const b of G.buildings) {
-    if (b.dead || !b.built || b.owner >= 2) continue;
+    if (b.dead || !b.built || b.owner >= GAIA) continue;
     const e = BUILDINGS[b.type].eff; if (!e || !e.heal) continue;
     queryUnits(b.x, b.y, 9, u => { if (!u.dead && u.owner === b.owner && u.hp < u.maxHp && !u.def.siege) u.hp = Math.min(u.maxHp, u.hp + e.heal); });
   }
@@ -2274,13 +2324,22 @@ function landmarkHeal() {
 function checkVictory() {
   // Wahrzeichen-Sieg (wie AoE4): Wer alle Wahrzeichen verliert (das erste Dorfzentrum zählt mit), hat verloren.
   // Außerdem verliert, wer keine fertigen Gebäude außer Mauern mehr hat.
-  for (let p = 0; p < 2; p++) {
+  // Mit Teams: Das Spiel endet, wenn nur noch ein Team übrig ist oder du selbst verloren hast.
+  const pls = G.players;
+  for (const pl of pls) {
+    if (pl.defeated) continue;
     let blds = 0, lms = 0;
-    for (const b of G.buildings) if (!b.dead && b.owner === p && b.built && !BUILDINGS[b.type].wall) { blds++; if (b.capital || BUILDINGS[b.type].landmark) lms++; }
-    if (blds === 0 || lms === 0) G.players[p].defeated = true;
+    for (const b of G.buildings) if (!b.dead && b.owner === pl.id && b.built && !BUILDINGS[b.type].wall) { blds++; if (b.capital || BUILDINGS[b.type].landmark) lms++; }
+    if (blds === 0 || lms === 0) {
+      pl.defeated = true;
+      if (pls.length > 2 && pl.id !== G.human) notify(PLAYER_COLORS[pl.id].name + (G.human >= 0 && allies(pl.id, G.human) ? ' (verbündet)' : '') + ' wurde besiegt!', allies(pl.id, G.human));
+    }
   }
-  if (G.players[0].defeated || G.players[1].defeated) {
-    G.over = { winner: G.players[0].defeated ? (G.players[1].defeated ? -1 : 1) : 0, time: G.time };
+  const left = pls.filter(pl => !pl.defeated);
+  const teamsLeft = new Set(left.map(pl => pl.team)).size;
+  if (teamsLeft <= 1 || (G.human >= 0 && pls[G.human].defeated)) {
+    const w = G.human >= 0 && !pls[G.human].defeated ? pls[G.human] : left[0];
+    G.over = { winner: teamsLeft === 1 && w ? w.id : -1, team: w ? w.team : -1, time: G.time };
   }
 }
 function notify(text, warn) { if (G && !G.headless) G.msgs.push({ text, warn: !!warn, t: G.time }); }
@@ -2335,7 +2394,7 @@ function execAct(p, c) {
     return;
   }
   if (c.am) { groupMove(units, x, y, true); return; }
-  if (target && target.owner !== undefined && target.owner < 2 && target.owner !== p) {
+  if (target && target.owner !== undefined && foes(p, target.owner)) {
     for (const u of units) orderAttack(u, target);
     // Einheiten, die das Ziel nicht angreifen können (z. B. Ramme gegen Einheiten), bewegen sich dorthin
     const cant = units.filter(u => !(u.order && u.order.t === 'attack'));
@@ -2456,20 +2515,23 @@ function createAI(owner, diff) {
     owner, diff, d, t: 0, ecoT: 0, milT: 0, defT: 0, atkT: 0, bldT: 0,
     nextAttack: d.firstAttack, wave: 0, attackers: new Set(), defenders: new Set(),
     planIdx: 0, wallsDone: false, wallStarted: false, towersBuilt: 0, lastHouseT: -99, threat: null,
-    corner: owner === 0 ? 0 : N - 1, ageT: 0, resT: 0, saving: null,
+    ageT: 0, resT: 0, saving: null,
     lmPick: [0, rnd() < 0.5 ? 0 : 1, rnd() < 0.5 ? 0 : 1, rnd() < 0.5 ? 0 : 1], // welches der zwei Wahrzeichen je Zeitalter
   };
 }
 // Relative Koordinaten (Abstand zur eigenen Ecke)
-function aiRel(ai, x, y) { return ai.owner === 0 ? { x, y } : { x: N - 1 - x, y: N - 1 - y }; }
-function aiAbs(ai, rx, ry) { return ai.owner === 0 ? { x: rx, y: ry } : { x: N - 1 - rx, y: N - 1 - ry }; }
+function aiCorner(ai) { return CORNERS[G.players[ai.owner].corner]; }
+function aiRel(ai, x, y) { const c = aiCorner(ai); return { x: c.x ? N - 1 - x : x, y: c.y ? N - 1 - y : y }; }
+function aiAbs(ai, rx, ry) { return aiRel(ai, rx, ry); }
+// Richtung von der eigenen Ecke zur Kartenmitte (je Achse +1 oder -1)
+function aiDir(ai) { const c = aiCorner(ai); return { x: c.x ? -1 : 1, y: c.y ? -1 : 1 }; }
 
 function aiUnits(ai, filter) { const out = []; for (const u of G.units) if (!u.dead && u.owner === ai.owner && (!filter || filter(u))) out.push(u); return out; }
 function aiBlds(ai, type, includeUnbuilt) {
   const out = []; for (const b of G.buildings) if (!b.dead && b.owner === ai.owner && (!type || b.type === type) && (includeUnbuilt || b.built)) out.push(b); return out;
 }
 function aiTC(ai) { return aiBlds(ai, 'tc', true)[0] || null; }
-function enemyOf(ai) { return 1 - ai.owner; }
+function enemyOf(ai, o) { return foes(ai.owner, o); }
 
 // Bauplatz suchen
 function aiFindSpot(ai, type, ax, ay, opts) {
@@ -2605,9 +2667,9 @@ function aiEconomy(ai) {
   const houses = aiBlds(ai, 'house', true).filter(h => !h.built).length;
   const margin = t < 240 ? 4 : 8;
   if (p.popCap < MAX_POP && p.pop + margin >= p.popCap && houses < (t < 300 ? 1 : 2) && tc) {
-    const hn = aiBuildingCount(ai, 'house'); const dir = ai.owner ? -1 : 1;
+    const hn = aiBuildingCount(ai, 'house'); const dir = aiDir(ai);
     const ang = hn * 0.7;
-    const ax = tc.x - dir * 1 + Math.cos(ang) * 5, ay = tc.y - dir * 1 + Math.sin(ang) * 5; // KI läuft nur im Einzelspieler
+    const ax = tc.x - dir.x * 1 + Math.cos(ang) * 5, ay = tc.y - dir.y * 1 + Math.sin(ang) * 5; // KI läuft nur im Einzelspieler
     const spot = aiFindSpot(ai, 'house', ax, ay, { maxR: 10, inside: !!ai.d.walls }) || aiFindSpot(ai, 'house', tc.x, tc.y, { maxR: 18 });
     if (spot) aiPlace(ai, 'house', spot, 1);
   }
@@ -2627,8 +2689,8 @@ function aiAssign(ai, u, type) {
       if (!r) {
         if (!canAfford(G.players[ai.owner], BUILDINGS.farm.cost)) return false;
         if (!tc) return false;
-        const dir = ai.owner ? -1 : 1;
-        let spot = aiFindSpot(ai, 'farm', tc.x - dir * 1, tc.y - dir * 1, { maxR: 9, margin: 0, inside: !!ai.d.walls });
+        const dir = aiDir(ai);
+        let spot = aiFindSpot(ai, 'farm', tc.x - dir.x * 1, tc.y - dir.y * 1, { maxR: 9, margin: 0, inside: !!ai.d.walls });
         if (!spot) spot = aiFindSpot(ai, 'farm', tc.x, tc.y, { maxR: 16, margin: 0 });
         if (!spot) return false;
         // Mühle in der Nähe der Felder
@@ -2662,8 +2724,8 @@ function aiAgeUp(ai) {
   const type = LANDMARKS.filter(k => BUILDINGS[k].landmark === next)[ai.lmPick[next]];
   ai.saving = BUILDINGS[type].cost;
   if (ai.t < plan[0] || !canAfford(p, ai.saving)) return;
-  const dir = ai.owner ? -1 : 1;
-  const spot = aiFindSpot(ai, type, tc.x - dir * 2 + dir * 5, tc.y - dir * 4, { maxR: 12, inside: !!ai.d.walls })
+  const dir = aiDir(ai);
+  const spot = aiFindSpot(ai, type, tc.x - dir.x * 2 + dir.x * 5, tc.y - dir.y * 4, { maxR: 12, inside: !!ai.d.walls })
     || aiFindSpot(ai, type, tc.x, tc.y, { maxR: 30, margin: 0 });
   if (spot && aiPlace(ai, type, spot, Math.min(5, 2 + next))) ai.saving = null;
 }
@@ -2721,19 +2783,19 @@ function aiBuildings(ai) {
     if (type === 'siege' && !ai.d.siege) continue;
     if (BUILDINGS[type].age > p.age) continue;
     if (aiBuildingCount(ai, type) < want[type]) {
-      const dir = ai.owner ? -1 : 1;
-      const spot = aiFindSpot(ai, type, tc.x + dir * 6, tc.y + dir * 6, { maxR: 10, inside: !!ai.d.walls });
+      const dir = aiDir(ai);
+      const spot = aiFindSpot(ai, type, tc.x + dir.x * 6, tc.y + dir.y * 6, { maxR: 10, inside: !!ai.d.walls });
       if (spot && aiPlace(ai, type, spot, 2)) return;
       if (!spot) {
-        const s2 = aiFindSpot(ai, type, tc.x + dir * 4, tc.y + dir * 8, { maxR: 14 }) || aiFindSpot(ai, type, tc.x, tc.y, { maxR: 26, margin: 0 });
+        const s2 = aiFindSpot(ai, type, tc.x + dir.x * 4, tc.y + dir.y * 8, { maxR: 14 }) || aiFindSpot(ai, type, tc.x, tc.y, { maxR: 26, margin: 0 });
         if (s2 && aiPlace(ai, type, s2, 2)) return;
       }
     }
   }
   // Türme
   if (ai.d.towers && p.age >= BUILDINGS.tower.age && t >= ai.d.towerTime && ai.towersBuilt < ai.d.towers && p.res.stone >= 125) {
-    const k = ai.towersBuilt; const dir = ai.owner ? -1 : 1;
-    const anchors = [[tc.x + dir * 8, tc.y + dir * 8], [tc.x + dir * 12, tc.y + dir * 3], [tc.x + dir * 3, tc.y + dir * 12]];
+    const k = ai.towersBuilt; const dir = aiDir(ai);
+    const anchors = [[tc.x + dir.x * 8, tc.y + dir.y * 8], [tc.x + dir.x * 12, tc.y + dir.y * 3], [tc.x + dir.x * 3, tc.y + dir.y * 12]];
     const a = anchors[k % anchors.length];
     const spot = aiFindSpot(ai, 'tower', a[0], a[1], { maxR: 5, inside: !!ai.d.walls });
     if (spot && aiPlace(ai, 'tower', spot, 2)) { ai.towersBuilt++; return; }
@@ -2806,7 +2868,7 @@ function aiMilitary(ai) {
   // Gegnerische Zusammensetzung -> Konter (leicht/schwer wie in AoE4)
   const e = { cav: 0, ranged: 0, lightInf: 0, heavy: 0, siege: 0, spear: 0 };
   for (const u of G.units) {
-    if (u.dead || u.owner !== enemyOf(ai) || !u.def.military) continue;
+    if (u.dead || !enemyOf(ai, u.owner) || !u.def.military) continue;
     const d = u.def;
     if (d.cls === 'cav') e.cav++; else if (d.cls === 'ranged') e.ranged++; else if (d.cls === 'siege') e.siege++; else if (!d.heavy) e.lightInf++;
     if (d.heavy) e.heavy++;
@@ -2856,8 +2918,8 @@ function aiMilitary(ai) {
   // Sammelpunkt Militär: vor der Basis
   const tc = aiTC(ai);
   if (tc) {
-    const dir = ai.owner ? -1 : 1;
-    const rp = { x: tc.x + dir * 9, y: tc.y + dir * 9 };
+    const dir = aiDir(ai);
+    const rp = { x: tc.x + dir.x * 9, y: tc.y + dir.y * 9 };
     for (const b of aiBlds(ai)) if (BUILDINGS[b.type].trains && b.type !== 'tc') b.rally = { x: rp.x, y: rp.y };
   }
 }
@@ -2869,7 +2931,7 @@ function aiDefense(ai) {
   // Bedrohungen: feindliche Einheiten nahe eigener Gebäude
   let tx = 0, ty = 0, n = 0, strength = 0;
   for (const u of G.units) {
-    if (u.dead || u.owner !== enemyOf(ai)) continue;
+    if (u.dead || !enemyOf(ai, u.owner)) continue;
     let near = tc ? dist(u.x, u.y, tc.x, tc.y) < 15 : false;
     if (!near) for (const b of myBlds) { if (distToRect(u.x, u.y, b.tx, b.ty, b.w, b.h) < 5) { near = true; break; } }
     if (near) { tx += u.x; ty += u.y; n++; strength += u.def.military ? 1 : 0.3; }
@@ -2909,12 +2971,12 @@ function aiDefense(ai) {
 function aiPickTarget(ai, from) {
   let best = null, bd = 1e9;
   for (const b of G.buildings) {
-    if (b.dead || b.owner !== enemyOf(ai) || BUILDINGS[b.type].wall) continue;
+    if (b.dead || !enemyOf(ai, b.owner) || BUILDINGS[b.type].wall || G.players[b.owner].defeated) continue;
     let d = dist(from.x, from.y, b.x, b.y);
     if (b.capital || BUILDINGS[b.type].landmark) d -= 6; // Wahrzeichen entscheiden das Spiel
     if (d < bd) { bd = d; best = b; }
   }
-  if (!best) for (const u of G.units) { if (u.dead || u.owner !== enemyOf(ai)) continue; const d = dist(from.x, from.y, u.x, u.y); if (d < bd) { bd = d; best = u; } }
+  if (!best) for (const u of G.units) { if (u.dead || !enemyOf(ai, u.owner) || G.players[u.owner].defeated) continue; const d = dist(from.x, from.y, u.x, u.y); if (d < bd) { bd = d; best = u; } }
   return best;
 }
 function aiAttack(ai) {
@@ -2945,7 +3007,7 @@ function aiAttack(ai) {
   const fighters = army.filter(u => !u.def.siege).length;
   if (fighters < need && !(late && fighters >= Math.max(4, need / 2))) return;
   // Bei Mittel/Schwer auf Belagerung warten, wenn der Gegner Mauern/Türme hat
-  const enemyFort = G.buildings.some(b => !b.dead && b.owner === enemyOf(ai) && (BUILDINGS[b.type].wall || b.type === 'tower'));
+  const enemyFort = G.buildings.some(b => !b.dead && enemyOf(ai, b.owner) && (BUILDINGS[b.type].wall || b.type === 'tower'));
   const siegeHave = army.filter(u => u.def.siege).length;
   if (ai.d.siege && enemyFort && siegeHave === 0 && aiBuildingCount(ai, 'siege') > 0 && !late) return;
   // Losschicken
@@ -2961,7 +3023,8 @@ function aiAttack(ai) {
   for (const u of send.filter(u => u.def.siege)) {
     if (tgt.kind === 'bld') orderAttack(u, tgt); else orderMove(u, tgt.x, tgt.y, true);
   }
-  if (G.human >= 0 && ai.owner !== G.human) notify('Ein feindlicher Angriff naht! (Welle ' + ai.wave + ', ' + send.length + ' Einheiten)', true);
+  if (G.human >= 0 && foes(ai.owner, G.human) && (G.players.length === 2 || tgt.owner === G.human)) notify('Ein feindlicher Angriff naht! (Welle ' + ai.wave + ', ' + send.length + ' Einheiten' + (G.players.length > 2 ? ', ' + PLAYER_COLORS[ai.owner].name : '') + ')', true);
+  else if (G.human >= 0 && allies(ai.owner, G.human)) notify('Dein Verbündeter ' + PLAYER_COLORS[ai.owner].name + ' greift ' + PLAYER_COLORS[tgt.owner].name + ' an (' + send.length + ' Einheiten).');
 }
 
 /* ============================ 9. RENDERING ============================ */
@@ -4374,12 +4437,12 @@ function render() {
     if (e.kind === 'unit') {
       const p = lerpPos(e); const s = w2s(p.x, p.y); if (!vis(s.x, s.y)) continue;
       const r = (e.def.radius * 40 + 3) * z;
-      ctx.strokeStyle = e.owner === G.human ? '#9dff8a' : e.owner < 2 ? '#ff7a6a' : '#fff2b0'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = e.owner === G.human ? '#9dff8a' : e.owner < GAIA ? (allies(e.owner, G.human) ? ALLY_COL : '#ff7a6a') : '#fff2b0'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
     } else if (e.kind === 'bld' || e.kind === 'res') {
       const w = e.w || 1, h = e.h || 1, tx = e.tx, ty = e.ty;
       const p = [w2s(tx, ty), w2s(tx + w, ty), w2s(tx + w, ty + h), w2s(tx, ty + h)];
-      ctx.strokeStyle = e.owner === G.human ? '#9dff8a' : e.kind === 'res' ? '#fff2b0' : '#ff7a6a'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = e.owner === G.human ? '#9dff8a' : e.kind === 'res' ? '#fff2b0' : allies(e.owner, G.human) ? ALLY_COL : '#ff7a6a'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y); for (let k = 1; k < 4; k++) ctx.lineTo(p[k].x, p[k].y); ctx.closePath(); ctx.stroke();
     }
   }
@@ -4490,11 +4553,19 @@ function render() {
     ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.strokeRect(b.x0 + 0.5, b.y0 + 0.5, b.x1 - b.x0, b.y1 - b.y0);
   }
 }
+// Beschriftung des Besitzers in der Auswahl; mit mehr als zwei Spielern samt Farbe
+function ownerLabel(o) {
+  if (o >= GAIA) return 'Natur';
+  if (o === G.human) return 'Du';
+  const name = allies(o, G.human) ? 'Verbündeter' : 'Gegner';
+  return G.players.length > 2 ? name + ' (' + PLAYER_COLORS[o].name + ')' : name;
+}
+const ALLY_COL = '#7cc4ff';
 function hpBar(x, y, w, f, owner) {
   const h = Math.max(3, 4 * cam.zoom);
   ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(x - w / 2 - 1, y - 1, w + 2, h + 2);
-  ctx.fillStyle = f > 0.5 ? (owner === G.human ? '#5fd04a' : owner === 1 || owner === 0 ? '#e0584a' : '#ddd') : f > 0.25 ? '#e2b33c' : '#e0443a';
-  if (owner !== G.human && owner < 2) ctx.fillStyle = f > 0.25 ? '#e0584a' : '#a02a20';
+  ctx.fillStyle = f > 0.5 ? (owner === G.human ? '#5fd04a' : owner < GAIA ? '#e0584a' : '#ddd') : f > 0.25 ? '#e2b33c' : '#e0443a';
+  if (owner !== G.human && owner < GAIA) ctx.fillStyle = allies(owner, G.human) ? (f > 0.25 ? ALLY_COL : '#3a6a9a') : f > 0.25 ? '#e0584a' : '#a02a20';
   ctx.fillRect(x - w / 2, y, w * clamp(f, 0, 1), h);
 }
 function drawBuildingAt(b, s, z) {
@@ -4649,7 +4720,7 @@ function updateMinimapTiles() {
   for (let i = 0; i < NN; i++) {
     let col;
     const t = G.terr[i], r = G.res[i], b = G.bld[i];
-    if (b && b.owner < 2) col = hex2rgb(BUILDINGS[b.type].farm ? '#b8a04a' : PLAYER_COLORS[b.owner].main);
+    if (b && b.owner < GAIA) col = hex2rgb(BUILDINGS[b.type].farm ? '#b8a04a' : PLAYER_COLORS[b.owner].main);
     else if (t === 1) col = [47, 106, 150];
     else if (t === 2) col = [120, 116, 106];
     else if (r) col = r.sub === 'tree' ? [38, 82, 34] : r.sub === 'gold' ? [240, 200, 40] : r.sub === 'stone' ? [190, 190, 185] : r.sub === 'berry' ? [200, 60, 90] : [150, 100, 60];
@@ -4671,7 +4742,7 @@ function renderMinimap(dt) {
   // Einheiten
   for (const u of G.units) {
     if (u.dead) continue;
-    c.fillStyle = u.owner < 2 ? (UI.selSet.has(u) ? '#ffffff' : PLAYER_COLORS[u.owner].light) : '#e8d8a8';
+    c.fillStyle = u.owner < GAIA ? (UI.selSet.has(u) ? '#ffffff' : PLAYER_COLORS[u.owner].light) : '#e8d8a8';
     c.fillRect(u.x - 0.6, u.y - 0.6, 1.4, 1.4);
   }
   c.restore();
@@ -4908,7 +4979,7 @@ function refreshPanel(force) {
       return;
     }
     if (e.kind === 'unit') {
-      const d = e.def; const owner = e.owner < 2 ? (e.owner === G.human ? 'Du' : 'Gegner') : 'Natur';
+      const d = e.def; const owner = ownerLabel(e.owner);
       let state = '';
       const o = e.order;
       if (e.type === 'villager') {
@@ -4932,7 +5003,7 @@ function refreshPanel(force) {
       const d = BUILDINGS[e.type]; const own = e.owner === G.human;
       let html = `<div class="selTitle"><img src="${ICONS[e.type]}">${d.name}</div>
         <div class="hpbar"><div style="width:${e.hp / e.maxHp * 100}%"></div></div>
-        <div class="sub">LP ${Math.ceil(e.hp)} / ${e.maxHp} · ${own ? 'Du' : 'Gegner'}</div>`;
+        <div class="sub">LP ${Math.ceil(e.hp)} / ${e.maxHp} · ${ownerLabel(e.owner)}</div>`;
       if (!e.built) html += `<div class="sub">Im Bau: ${Math.floor(e.progress * 100)} %${e.builders ? ' · ' + e.builders + ' Bauarbeiter' : ' · keine Bauarbeiter'}</div>`;
       else {
         const facts = [];
@@ -5026,13 +5097,15 @@ function showEnd() {
   $('endTitle').textContent = o.lost ? 'Verbindung getrennt' : win ? 'Sieg!' : 'Niederlage';
   $('endTitle').style.color = o.lost ? '#5a2a14' : win ? '#2d6a1f' : '#7a1d16';
   const why = o.lost ? 'Die Verbindung zum Mitspieler ist abgebrochen.' : o.resign ? 'Dein Mitspieler hat aufgegeben.'
-    : win ? 'Die gegnerische Siedlung ist gefallen.' : 'Deine Siedlung wurde zerstört.';
+    : win ? (G.players.length > 2 ? 'Alle gegnerischen Siedlungen sind gefallen.' : 'Die gegnerische Siedlung ist gefallen.')
+    : G.players[Math.max(0, G.human)].defeated ? 'Deine Siedlung wurde zerstört.' : 'Dein Team wurde besiegt.';
   $('endSub').textContent = why + ' Spielzeit ' + fmtTime(o.time) + ' · ' + (G.net ? 'Mehrspieler' : DIFFS[G.diff].name) + ' · ' + MAPS[G.map].name;
   // Spalten: zuerst der eigene Spieler
-  const me = Math.max(0, G.human), other = 1 - me;
-  const sm = G.players[me].stats, so = G.players[other].stats;
+  const me = Math.max(0, G.human);
+  const cols = [me].concat(G.players.map(p => p.id).filter(i => i !== me));
+  const head = i => i === me ? 'Du' : G.net ? 'Gegner' : G.players.length > 2 ? PLAYER_COLORS[i].name + (allies(i, me) ? ' (Team)' : '') : 'KI';
   const rows = [['Gesammelte Ressourcen', 'gathered'], ['Ausgebildete Einheiten', 'trained'], ['Errichtete Gebäude', 'built'], ['Getötete Feinde', 'kills'], ['Verlorene Einheiten', 'lost'], ['Zerstörte Gebäude', 'razed']];
-  $('endStats').innerHTML = `<tr><th></th><th style="color:${PLAYER_COLORS[me].main}">Du</th><th style="color:${PLAYER_COLORS[other].main}">${G.net ? 'Gegner' : 'KI'}</th></tr>` + rows.map(r => `<tr><td>${r[0]}</td><td>${Math.floor(sm[r[1]])}</td><td>${Math.floor(so[r[1]])}</td></tr>`).join('');
+  $('endStats').innerHTML = `<tr><th></th>${cols.map(i => `<th style="color:${PLAYER_COLORS[i].main}">${head(i)}</th>`).join('')}</tr>` + rows.map(r => `<tr><td>${r[0]}</td>${cols.map(i => `<td>${Math.floor(G.players[i].stats[r[1]])}</td>`).join('')}</tr>`).join('');
   $('btnRestartSame').classList.toggle('hidden', !!G.net);
   $('endScreen').classList.remove('hidden');
 }
@@ -5161,7 +5234,7 @@ function commandAt(sx, sy, attackMove) {
   issue({ c: 'act', ids: own.map(e => e.id), x: w.x, y: w.y, t: target ? target.id : 0, am: !!attackMove });
   // Markierung sofort anzeigen (im Mehrspieler kommt die Ausführung leicht verzögert)
   const units = own.filter(e => e.kind === 'unit');
-  const enemy = target && target.owner !== undefined && target.owner < 2 && target.owner !== G.human;
+  const enemy = target && target.owner !== undefined && foes(G.human, target.owner);
   const onTarget = target && units.some(u => u.type === 'villager') && (target.kind === 'res' || target.type === 'deer' || (target.kind === 'bld' && target.owner === G.human));
   if (!units.length) { if (own.some(e => e.kind === 'bld' && BUILDINGS[e.type].trains)) addEffect('order', w.x, w.y, 'move'); }
   else if (attackMove) addEffect('order', w.x, w.y, 'attack');
@@ -5338,6 +5411,7 @@ function setupInput() {
     b.parentNode.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
   }));
   $('btnStart').addEventListener('click', startGameFromMenu);
+  loadMenuPlayers(); renderPlayerList();
   $('btnSaveMenu').addEventListener('click', () => openSaveScreen('save'));
   document.querySelectorAll('[data-ctrl]').forEach(b => b.addEventListener('click', () => setCtrl(b.dataset.ctrl)));
   $('btnCtrlMode').addEventListener('click', () => { const m = Object.keys(CTRL_NAMES); setCtrl(m[(m.indexOf(CTRL.mode) + 1) % m.length]); });
@@ -5348,7 +5422,7 @@ function setupInput() {
   $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
   $('btnLoadStart').addEventListener('click', () => openSaveScreen('load'));
   $('btnSaveBack').addEventListener('click', closeSaveScreen);
-  $('btnRestartSame').addEventListener('click', () => { $('endScreen').classList.add('hidden'); startGame(G.seed, G.diff, G.map); });
+  $('btnRestartSame').addEventListener('click', () => { $('endScreen').classList.add('hidden'); startGame(G.seed, G.diff, G.map, { ai: G.players.slice(1).map(p => ({ team: p.team })) }); });
   $('btnNew').addEventListener('click', () => { $('endScreen').classList.add('hidden'); netClose(true); showMenu(); });
   $('btnMP').addEventListener('click', showMPScreen);
   $('btnMPBack').addEventListener('click', () => { netClose(true); $('mpScreen').classList.add('hidden'); showMenu(); });
@@ -6146,12 +6220,45 @@ function showMenu() {
   $('startScreen').classList.remove('hidden');
   $('topbar').classList.add('hidden'); $('bottom').classList.add('hidden'); $('touchBar').classList.add('hidden'); $('placeBar').classList.add('hidden');
 }
+// Spielerliste im Hauptmenü: du (Team 1) und bis zu drei Computerspieler, je verbündet oder in einem Gegner-Team
+const PLAYERS_KEY = 'burgschiltberg.players';
+const MENU = { ai: [{ team: 1 }] };
+function teamName(t) { return t === 0 ? 'Verbündet' : t === 1 ? 'Gegner' : 'Gegner ' + t; }
+function loadMenuPlayers() {
+  try {
+    const a = JSON.parse(localStorage.getItem(PLAYERS_KEY));
+    if (Array.isArray(a) && a.length && a.length < MAX_PLAYERS) MENU.ai = a.map(x => ({ team: clamp(x.team | 0, 0, MAX_PLAYERS - 1) }));
+  } catch (e) { /* ignorieren */ }
+}
+function renderPlayerList() {
+  const el = $('playerList'); el.innerHTML = '';
+  const chip = (i, html) => { const d = document.createElement('div'); d.className = 'plc'; d.style.setProperty('--pc', PLAYER_COLORS[i].main); d.innerHTML = html; el.appendChild(d); return d; };
+  chip(0, 'Du<small>' + PLAYER_COLORS[0].name + ' · Team 1</small>');
+  MENU.ai.forEach((a, k) => {
+    const d = chip(k + 1, PLAYER_COLORS[k + 1].name + '<small>Computer</small><button class="team' + (a.team === 0 ? ' ally' : '') + '" title="Team wechseln">' + teamName(a.team) + '</button>' + (MENU.ai.length > 1 ? '<button class="x" title="Entfernen">×</button>' : ''));
+    d.querySelector('.team').addEventListener('click', () => { a.team = (a.team + 1) % MAX_PLAYERS; renderPlayerList(); });
+    const x = d.querySelector('.x'); if (x) x.addEventListener('click', () => { MENU.ai.splice(k, 1); renderPlayerList(); });
+  });
+  if (MENU.ai.length < MAX_PLAYERS - 1) {
+    const b = document.createElement('button'); b.className = 'plc add'; b.innerHTML = '+ Computer<small>hinzufügen</small>';
+    b.addEventListener('click', () => { MENU.ai.push({ team: 1 }); renderPlayerList(); });
+    el.appendChild(b);
+  }
+  // Zusammenfassung: Teams nebeneinander, z. B. „Blau + Grün gegen Rot“
+  const groups = new Map(); [0].concat(MENU.ai.map(a => a.team)).forEach((t, i) => { if (!groups.has(t)) groups.set(t, []); groups.get(t).push(PLAYER_COLORS[i].name); });
+  const ok = groups.size > 1;
+  $('teamHint').textContent = ok ? [...groups.values()].map(g => g.join(' + ')).join(' gegen ') + (groups.size > 2 ? ' (jedes Team gegen jedes)' : '') : 'Mindestens ein Computerspieler muss dein Gegner sein.';
+  $('teamHint').classList.toggle('warn', !ok);
+  $('btnStart').disabled = !ok;
+  try { localStorage.setItem(PLAYERS_KEY, JSON.stringify(MENU.ai)); } catch (e) { /* ignorieren */ }
+}
 function startGameFromMenu() {
+  if (!MENU.ai.some(a => a.team !== 0)) return;
   const sel = document.querySelector('#diffChoice .diff.sel'); const diff = sel ? sel.dataset.d : 'medium';
   const msel = document.querySelector('#mapChoice .diff.sel'); const map = msel ? msel.dataset.m : 'balanced';
   const txt = $('seedInput').value.trim();
   const seed = txt ? (/^\d+$/.test(txt) ? +txt : hashStr(txt)) : Math.floor(Math.random() * 1e9);
-  startGame(seed, diff, map);
+  startGame(seed, diff, map, { ai: MENU.ai.map(a => ({ team: a.team })) });
 }
 function startGame(seed, diff, map, opts) {
   opts = opts || {};
@@ -6162,7 +6269,9 @@ function startGame(seed, diff, map, opts) {
   beginSession();
   setSelection([tc]);
   const foe = PLAYER_COLORS[1 - G.human].name.toLowerCase();
+  const names = f => G.players.filter(p => p.id !== G.human && f(p.id)).map(p => PLAYER_COLORS[p.id].name).join(', ');
   notify(G.net ? `Mehrspieler: Du spielst ${PLAYER_COLORS[G.human].name}. Zerstöre die ${foe}e Siedlung!`
+    : G.players.length > 2 ? 'Willkommen in Burg Schilli! Gegner: ' + names(i => foes(i, G.human)) + (names(i => allies(i, G.human)) ? ' · Verbündete: ' + names(i => allies(i, G.human)) : '') + '. Zerstöre die Wahrzeichen aller Gegner.'
     : 'Willkommen in Burg Schilli! Baue deine Wirtschaft auf, steige mit Wahrzeichen in neue Zeitalter auf und zerstöre die Wahrzeichen des roten Gegners.');
 }
 // Gemeinsamer Teil für neues und geladenes Spiel

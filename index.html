@@ -498,6 +498,7 @@ body.touch .touchKeys { display: block; }
     <h1 class="sm">Mehrspieler</h1>
     <div class="orn"></div>
     <h2>1 gegen 1 über das Internet – ihr müsst nicht im selben Netz sein</h2>
+    <div id="mpVersion" style="text-align:center;font-size:12px;opacity:.6;margin:-10px 0 10px"></div>
     <div id="mpResume" class="slot hidden">
       <div class="meta" id="mpResumeMeta"></div>
       <button class="sbtn" id="btnMPResume">Fortsetzen</button>
@@ -5294,6 +5295,8 @@ function setPaused(on, byOther) {
 // Verbindungsaufbau; STUN/TURN sorgen dafür, dass es auch hinter Routern (NAT) und Firewalls klappt.
 // Eigener Vermittlungsserver (z. B. `npx -p peer peerjs --port 9000`): index.html#peer=host:9000 öffnen.
 const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js'];
+// Bei jeder Änderung am Mehrspieler hochzählen: im Menü sichtbar, damit man erkennt, ob die neue Version geladen ist
+const GAME_VERSION = '2026-10-25 · 4';
 const NET_PROTO = 1;            // Protokollversion; beide Seiten müssen dieselbe Spielversion nutzen
 const NET_PREFIX = 'burgfeld-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -5308,6 +5311,7 @@ const ST_CHUNK = 7000;     // Spielstand in Stücken übertragen (PeerJS erlaubt
 
 function mpStatus(text, err) { const el = $('mpStatus'); el.innerHTML = text; el.classList.toggle('err', !!err); }
 function showMPScreen() {
+  $('mpVersion').textContent = 'Version ' + GAME_VERSION + (METERED_USER ? ' · Relay eingebaut' : '');
   $('startScreen').classList.add('hidden'); $('mpScreen').classList.remove('hidden'); $('mpLobby').classList.add('hidden');
   mpStatus(''); $('mpPing').textContent = ''; renderMPResume();
   const m = /(?:^|[#&])join=([A-Za-z0-9]{6})/.exec(location.hash);

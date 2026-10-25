@@ -303,7 +303,10 @@ body:not(.touch) #touchBar, body:not(.touch) #placeBar { display: none !importan
 body.touch #msgs { top: calc(var(--topH) + 52px); }
 body.touch .cbtn .hk { display: none; }
 body.touch #fps { top: auto; bottom: calc(var(--botH) + var(--safeB) + 4px); }
-body.touch .mouseKeys, .touchKeys { display: none; }
+body.touch .mouseKeys, .touchKeys, body.touch .deskOnly { display: none !important; }
+.ctlRow { display: flex; gap: 8px; justify-content: center; margin: 4px 0 10px; }
+.ctlRow .diff { flex: 0 1 140px; padding: 8px 6px 7px; font-size: 13px; }
+.ctlEdge { text-align: center; margin: 0 0 12px; }
 body.touch .touchKeys { display: block; }
 @media (hover: none) {
   .cbtn:hover { border-color: #7a5a32; background: linear-gradient(#5a4128, #33251a); }
@@ -478,16 +481,25 @@ body.touch .touchKeys { display: block; }
       <b>Befehlsknopf lange drücken</b> zeigt Kosten und Infos<br>
       <b>Abwählen / Mehrfach / Untätig / Zentrum / Armee</b> oben links im Spiel
     </div>
+    <div class="deskOnly">
+      <div class="ctlRow" id="ctrlChoice">
+        <button class="diff" data-ctrl="auto">Automatisch<small>erkennt das Gerät</small></button>
+        <button class="diff" data-ctrl="pad">Touchpad<small>2 Finger: Kamera</small></button>
+        <button class="diff" data-ctrl="mouse">Maus<small>Rad: Zoom</small></button>
+      </div>
+      <div class="ctlEdge"><button class="sbtn" id="btnEdgeStart"></button></div>
+    </div>
     <div class="keys mouseKeys">
+      <b>Touchpad:</b> <b>zwei Finger schieben</b> Kamera, <b>Pinch</b> Zoom, <b>Klick mit zwei Fingern</b> Befehl<br>
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
       <b>Shift</b> zur Auswahl hinzufügen<br>
       <b>Doppelklick</b> alle gleichen Einheiten im Bild<br>
       <b>Rechtsklick</b> oder <b>Ctrl+Klick</b>: bewegen, angreifen, sammeln, bauen<br>
-      <b>A + Klick</b> Angriffsbewegung (oder <b>Alt+Rechtsklick</b>)<br>
+      <b>A + Klick</b> Angriffsbewegung (oder <b>Alt/Option+Rechtsklick</b>)<br>
       <b>WASD / Pfeiltasten</b>, Bildschirmrand: Kamera<br>
-      <b>Mausrad / Pinch</b> Zoom<br>
-      <b>H</b> Dorfzentrum, <b>.</b> untätiger Dorfbewohner<br>
-      <b>Ctrl+1–9</b> Gruppe setzen, <b>1–9</b> Gruppe wählen<br>
+      <b>Mausrad</b>, <b>Pinch</b> oder <b>+ / −</b> Zoom<br>
+      <b>H</b> Dorfzentrum, <b>.</b> untätiger Dorfbewohner, <b>Komma</b> ganze Armee<br>
+      <b>Ctrl+1–9</b> oder <b>Option+1–9</b> Gruppe setzen, <b>1–9</b> Gruppe wählen<br>
       <b>Esc</b> abbrechen, <b>Leertaste/P</b> Pause, <b>Entf</b> Gebäude abreißen<br>
       <b>F5</b> oder <b>Cmd/Ctrl+S</b> Spiel speichern
     </div>
@@ -576,6 +588,8 @@ body.touch .touchKeys { display: block; }
       <button class="bigbtn" id="btnResume">Fortsetzen</button>
       <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
       <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
+      <button class="bigbtn alt deskOnly" id="btnCtrlMode"></button>
+      <button class="bigbtn alt deskOnly" id="btnEdge"></button>
       <button class="bigbtn alt hidden" id="btnSaveLater">Unterbrechen &amp; später weiterspielen</button>
       <button class="bigbtn alt quiet" id="btnQuit">Aufgeben &amp; Hauptmenü</button>
     </div>
@@ -608,7 +622,7 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '1.6';
+const GAME_VERSION = '1.7';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -4805,6 +4819,10 @@ function selectIdleVillager() {
   if (idle.length) { UI.idleIdx = ((UI.idleIdx || 0) + 1) % idle.length; const u = idle[UI.idleIdx]; setSelection([u]); centerOn(u.x, u.y); }
   else notifyLocal('Keine untätigen Dorfbewohner.');
 }
+function selectArmy() {
+  const army = G.units.filter(u => !u.dead && u.owner === G.human && u.def.military);
+  if (army.length) setSelection(army); else notifyLocal('Keine Militäreinheiten.');
+}
 function selectTownCenter() {
   const tcs = G.buildings.filter(b => !b.dead && b.owner === G.human && b.type === 'tc');
   if (tcs.length) { const i = (tcs.indexOf(UI.sel[0]) + 1) % tcs.length; setSelection([tcs[i]]); centerOn(tcs[i].x, tcs[i].y); }
@@ -4974,9 +4992,47 @@ function showEnd() {
 /* ============================ 11. EINGABE ============================ */
 const INPUT = {
   mx: 0, my: 0, inside: false, keys: new Set(), down: false, downX: 0, downY: 0, dragging: false, dragBox: null,
-  lastClickT: 0, lastClickId: null, mmDown: false, midDown: false, midX: 0, midY: 0, camX: 0, camY: 0, lastGroupKey: null, lastGroupT: 0,
+  lastClickT: 0, lastClickId: null, mmDown: false, midDown: false, midX: 0, midY: 0, camX: 0, camY: 0, lastGroupKey: null, lastGroupT: 0, edgeT: 0,
 };
 let paused = false, running = false;
+
+// Bedienung am Rechner: Maus oder Touchpad (z. B. MacBook). Betrifft nur Kamera und Eingabe, nie die Simulation.
+const CTRL_KEY = 'burgschiltberg.ctrl';
+const CTRL_NAMES = { auto: 'Automatisch', pad: 'Touchpad', mouse: 'Maus' };
+const CTRL = { mode: 'auto', edge: true, padT: -1e9, gesture: false, hinted: false };
+try {
+  const c = JSON.parse(localStorage.getItem(CTRL_KEY));
+  if (c && CTRL_NAMES[c.mode]) CTRL.mode = c.mode;
+  if (c && c.edge === false) CTRL.edge = false;
+} catch (e) { /* ignorieren */ }
+function setCtrl(mode, edge) {
+  if (mode) CTRL.mode = mode;
+  if (edge !== undefined) CTRL.edge = edge;
+  try { localStorage.setItem(CTRL_KEY, JSON.stringify({ mode: CTRL.mode, edge: CTRL.edge })); } catch (e) { /* ignorieren */ }
+  renderCtrl();
+}
+function renderCtrl() {
+  document.querySelectorAll('[data-ctrl]').forEach(b => b.classList.toggle('sel', b.dataset.ctrl === CTRL.mode));
+  $('btnCtrlMode').textContent = 'Bedienung: ' + CTRL_NAMES[CTRL.mode];
+  $('btnEdge').textContent = $('btnEdgeStart').textContent = 'Kamera am Bildschirmrand: ' + (CTRL.edge ? 'an' : 'aus');
+}
+// Kommt dieses Scroll-Ereignis vom Touchpad (zwei Finger) oder von einem Mausrad?
+function wheelIsPad(e) {
+  if (CTRL.mode !== 'auto') return CTRL.mode === 'pad';
+  const now = performance.now();
+  let pad;
+  if (e.deltaMode !== 0) pad = false; // Firefox-Mausrad zählt in Zeilen
+  else if (e.deltaX !== 0) pad = true; // Mausräder scrollen nicht seitlich (Shift wird zu deltaX, deshalb unten nachgeprüft)
+  else if (e.wheelDeltaY) pad = Math.abs(e.wheelDeltaY) % 120 !== 0; // Raststufen liefern Vielfache von 120
+  else pad = !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 16;
+  if (pad && e.shiftKey && e.deltaY === 0 && e.wheelDeltaX && Math.abs(e.wheelDeltaX) % 120 === 0) pad = false;
+  // innerhalb einer Geste samt Nachlauf nicht hin und her springen
+  if (pad) CTRL.padT = now; else if (now - CTRL.padT < 500) pad = true;
+  if (pad && !CTRL.hinted && running && G) { CTRL.hinted = true; notifyLocal('Touchpad erkannt: zwei Finger schieben die Kamera, Pinch zoomt. Umstellen im Pausenmenü.', false); }
+  return pad;
+}
+function panBy(dx, dy) { cam.x += dx / cam.zoom; cam.y += dy / cam.zoom; clampCam(); if (UI.placing) updatePlacingPos(); }
+function zoomCenter(f) { zoomAt(VW / 2, (UI_TOP + VH - UI_BOT) / 2, cam.zoom * f); }
 
 function inGameArea(x, y) { return y > UI_TOP && y < VH - UI_BOT; }
 function overUI(x, y) { return y <= UI_TOP || y >= VH - UI_BOT; }
@@ -5137,20 +5193,27 @@ function setupInput() {
     }
     INPUT.dragging = false; INPUT.dragBox = null;
   });
-  // Zoom: Mausrad und Trackpad-Pinch (Chrome: wheel+ctrlKey, Safari: gesture*)
+  // Scrollen: Touchpad (zwei Finger) schwenkt die Kamera, Mausrad zoomt.
+  // Pinch: Chrome/Firefox melden wheel+ctrlKey, Safari gesture*-Ereignisse.
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     if (!running) return;
-    let dy = e.deltaY, dx = e.deltaX; if (e.deltaMode === 1) { dy *= 30; dx *= 30; }
-    // Trackpad: seitliches Wischen schwenkt die Kamera, vertikal/Pinch zoomt
-    if (!e.ctrlKey && Math.abs(dx) > Math.abs(dy)) { cam.x += dx / cam.zoom; clampCam(); return; }
-    const f = Math.exp(-dy * (e.ctrlKey ? 0.012 : 0.0018));
-    zoomAt(e.clientX, e.clientY, cam.zoom * f);
+    let dy = e.deltaY, dx = e.deltaX;
+    if (e.deltaMode === 1) { dy *= 30; dx *= 30; } else if (e.deltaMode === 2) { dy *= VH; dx *= VW; }
+    if (e.ctrlKey) { if (!CTRL.gesture) zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-clamp(dy, -60, 60) * 0.012)); return; }
+    if (wheelIsPad(e)) {
+      // Cmd oder Option beim Schieben zoomt, wer nicht pinchen mag
+      if (e.metaKey || e.altKey) zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-clamp(dy, -60, 60) * 0.006));
+      else panBy(dx, dy);
+      return;
+    }
+    if (Math.abs(dx) > Math.abs(dy)) { panBy(dx, 0); return; } // Shift+Rad oder Kipprad
+    zoomAt(e.clientX, e.clientY, cam.zoom * Math.exp(-clamp(dy, -300, 300) * 0.0018));
   }, { passive: false });
   let gStart = 1;
-  canvas.addEventListener('gesturestart', e => { e.preventDefault(); gStart = cam.zoom; });
-  canvas.addEventListener('gesturechange', e => { e.preventDefault(); if (running && !touchRecent()) zoomAt(INPUT.mx, INPUT.my, gStart * e.scale); });
-  canvas.addEventListener('gestureend', e => e.preventDefault());
+  canvas.addEventListener('gesturestart', e => { e.preventDefault(); gStart = cam.zoom; CTRL.gesture = !touchRecent(); });
+  canvas.addEventListener('gesturechange', e => { e.preventDefault(); if (running && !touchRecent()) zoomAt(e.clientX || INPUT.mx, e.clientY || INPUT.my, gStart * e.scale); });
+  canvas.addEventListener('gestureend', e => { e.preventDefault(); CTRL.gesture = false; });
 
   // Minikarte
   mmCanvas.addEventListener('mousedown', e => {
@@ -5190,6 +5253,8 @@ function setupInput() {
     }
     if (k === 'h') { selectTownCenter(); return; }
     if (k === '.') { selectIdleVillager(); return; }
+    if (k === ',') { selectArmy(); return; }
+    if (!e.ctrlKey && !e.metaKey && (k === '+' || k === '=' || k === '-')) { e.preventDefault(); zoomCenter(k === '-' ? 1 / 1.15 : 1.15); return; }
     if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelection(); return; }
     // kontextabhängige Tastenkürzel der Befehlsleiste
     const hk = k.toUpperCase();
@@ -5224,6 +5289,11 @@ function setupInput() {
   }));
   $('btnStart').addEventListener('click', startGameFromMenu);
   $('btnSaveMenu').addEventListener('click', () => openSaveScreen('save'));
+  document.querySelectorAll('[data-ctrl]').forEach(b => b.addEventListener('click', () => setCtrl(b.dataset.ctrl)));
+  $('btnCtrlMode').addEventListener('click', () => { const m = Object.keys(CTRL_NAMES); setCtrl(m[(m.indexOf(CTRL.mode) + 1) % m.length]); });
+  $('btnEdge').addEventListener('click', () => setCtrl(null, !CTRL.edge));
+  $('btnEdgeStart').addEventListener('click', () => setCtrl(null, !CTRL.edge));
+  renderCtrl();
   $('btnLoadMenu').addEventListener('click', () => openSaveScreen('load'));
   $('btnLoadStart').addEventListener('click', () => openSaveScreen('load'));
   $('btnSaveBack').addEventListener('click', closeSaveScreen);
@@ -5275,11 +5345,15 @@ function updateCamera(dt) {
     const f = Math.exp(-dt * 4.5); kin.vx *= f; kin.vy *= f;
     if (Math.hypot(kin.vx, kin.vy) < 25) TOUCH.kin = null;
   }
-  if (INPUT.inside && !INPUT.down && !INPUT.midDown && !IS_TOUCH && !touchRecent() && document.hasFocus()) {
+  if (CTRL.edge && INPUT.inside && !INPUT.down && !INPUT.midDown && !IS_TOUCH && !touchRecent() && document.hasFocus()) {
     const m = 6;
-    if (INPUT.mx <= m) dx -= sp; else if (INPUT.mx >= VW - m) dx += sp;
-    if (INPUT.my <= m) dy -= sp; else if (INPUT.my >= VH - m) dy += sp;
-  }
+    const ex = INPUT.mx <= m ? -1 : INPUT.mx >= VW - m ? 1 : 0, ey = INPUT.my <= m ? -1 : INPUT.my >= VH - m ? 1 : 0;
+    // kurz verweilen, damit der Zeiger auf dem Weg zu Tabs, Dock oder Menüleiste nichts verschiebt
+    const now = performance.now();
+    if (!ex && !ey) INPUT.edgeT = 0;
+    else if (!INPUT.edgeT) INPUT.edgeT = now;
+    else if (now - INPUT.edgeT > 180) { dx += ex * sp; dy += ey * sp; }
+  } else INPUT.edgeT = 0;
   if (dx || dy) { cam.x += dx; cam.y += dy; clampCam(); if (UI.placing) updatePlacingPos(); }
 }
 function togglePause() {
@@ -5976,10 +6050,7 @@ function setupTouch() {
   on('tbMulti', () => { TOUCH.multi = !TOUCH.multi; $('tbMulti').classList.toggle('on', TOUCH.multi); });
   on('tbIdle', selectIdleVillager);
   on('tbTC', selectTownCenter);
-  on('tbArmy', () => {
-    const army = G.units.filter(u => !u.dead && u.owner === G.human && u.def.military);
-    if (army.length) setSelection(army); else notifyLocal('Keine Militäreinheiten.');
-  });
+  on('tbArmy', selectArmy);
   on('btnPlaceOk', () => commitPlacing(false));
   on('btnPlaceNo', () => { cancelPlacing(); refreshCommands(); });
 }

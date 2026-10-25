@@ -653,8 +653,9 @@ body.touch .touchKeys { display: block; }
    ===================================================================== */
 
 /* ============================ 1. KONFIGURATION ============================ */
-// Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '2.4';
+// Softwareversion: NICHT von Hand ändern. Der Pages-Workflow (.github/workflows/pages.yml) ersetzt
+// den Wert beim Veröffentlichen durch die Anzahl der Commits auf main (25 → '2.5'). Lokal steht hier 'dev'.
+const GAME_VERSION = 'dev';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -934,7 +935,7 @@ function generateMap(seed, mapType, four) {
     let k = 0;
     if (n > M.forest) k = 3;
     if (x === 0 || y === 0 || x === N - 1 || y === N - 1) k = rnd() < (M.edge !== undefined ? M.edge : M.desert ? 0.15 : 0.5) ? 3 : 0;
-    kind[i] = k; kind[m] = k;
+    setK(i, k);
   }
   // Seen und Felsen
   const blob = (cx, cy, r, k) => {

@@ -174,10 +174,16 @@ html, body {
     <h1>BURGFELD</h1>
     <h2>Ein isometrisches Echtzeit-Strategiespiel</h2>
     <h3>Schwierigkeit des Gegners</h3>
-    <div class="diffs">
+    <div class="diffs" id="diffChoice">
       <button class="diff" data-d="easy">Leicht<small>gemächlich, keine Mauern</small></button>
       <button class="diff sel" data-d="medium">Mittel<small>Türme, Palisaden, Rammen</small></button>
       <button class="diff" data-d="hard">Schwer<small>Steinmauern, Katapulte</small></button>
+    </div>
+    <h3>Karte</h3>
+    <div class="diffs" id="mapChoice">
+      <button class="diff" data-m="desert">Wüste<small>Oasen, wenig Holz, mehr Gold</small></button>
+      <button class="diff sel" data-m="balanced">Ausgeglichen<small>Wiesen, Wälder und Seen</small></button>
+      <button class="diff" data-m="forest">Waldland<small>dichte Wälder, enge Wege</small></button>
     </div>
     <div class="row">Karten-Seed: <input id="seedInput" type="text" placeholder="zufällig"></div>
     <button class="bigbtn" id="btnStart">Spiel starten</button>
@@ -304,6 +310,12 @@ const VILLAGER_BUILDS = ['house', 'mill', 'lumber', 'mining', 'farm', 'barracks'
   'palisade', 'pgate', 'wall', 'sgate', 'tc'];
 
 // Schwierigkeitsgrade der KI
+// Kartentypen: Waldschwelle (niedriger = mehr Wald), Seen, Felsen, Zusatzgold
+const MAPS = {
+  balanced: { name: 'Ausgeglichen', forest: 0.6, lakes: 1, rocks: 4, extraGold: 0 },
+  forest: { name: 'Waldland', forest: 0.48, lakes: 1, rocks: 2, extraGold: 0 },
+  desert: { name: 'Wüste', forest: 0.78, lakes: 0.55, rocks: 9, extraGold: 1, desert: true },
+};
 const DIFFS = {
   easy: { name: 'Leicht', gather: 0.8, vills: 18, firstAttack: 600, waveSize: 6, waveGrow: 2, waveInterval: 240,
     walls: null, towers: 0, siege: false, catapults: false, maxBuild: 1, startBonus: 0, buildQueue: 1,
@@ -359,7 +371,8 @@ function removeResource(r) {
   G.resDirty = true;
 }
 
-function generateMap(seed) {
+function generateMap(seed, mapType) {
+  const M = MAPS[mapType] || MAPS.balanced;
   const rnd = mulberry32(seed);
   const terr = G.terr;
   // Wertrauschen für Wälder
@@ -382,8 +395,8 @@ function generateMap(seed) {
     if (m < i) continue;
     const n = noiseAt(x, y, 7.5) * 0.7 + noiseAt(x + 31, y + 17, 3.2) * 0.3;
     let k = 0;
-    if (n > 0.6) k = 3;
-    if (x === 0 || y === 0 || x === N - 1 || y === N - 1) k = rnd() < 0.5 ? 3 : 0;
+    if (n > M.forest) k = 3;
+    if (x === 0 || y === 0 || x === N - 1 || y === N - 1) k = rnd() < (M.desert ? 0.15 : 0.5) ? 3 : 0;
     kind[i] = k; kind[m] = k;
   }
   // Seen und Felsen
@@ -394,9 +407,20 @@ function generateMap(seed) {
       if (d < r) { const i = y * N + x; kind[i] = k; kind[mirror(i)] = k; }
     }
   };
-  blob(22 + rnd() * 6, 44 + rnd() * 6, 3 + rnd() * 2, 1);
-  blob(8 + rnd() * 6, 36 + rnd() * 6, 2.2 + rnd() * 1.5, 1);
-  for (let k = 0; k < 4; k++) blob(14 + rnd() * 36, 14 + rnd() * 36, 0.9 + rnd() * 0.8, 2);
+  blob(22 + rnd() * 6, 44 + rnd() * 6, (3 + rnd() * 2) * M.lakes, 1);
+  blob(8 + rnd() * 6, 36 + rnd() * 6, (2.2 + rnd() * 1.5) * M.lakes, 1);
+  for (let k = 0; k < M.rocks; k++) blob(14 + rnd() * 36, 14 + rnd() * 36, 0.9 + rnd() * 0.8, 2);
+  if (M.desert) { // Oasen: kleine Wasserstellen mit Palmenring
+    for (let k = 0; k < 2; k++) {
+      const cx = 20 + rnd() * 24, cy = 6 + rnd() * 14, r = 1.4 + rnd() * 0.6;
+      for (let y = Math.floor(cy - r - 3); y <= cy + r + 3; y++) for (let x = Math.floor(cx - r - 3); x <= cx + r + 3; x++) {
+        if (!inMap(x, y)) continue;
+        const d = dist(x, y, cx, cy), i = y * N + x;
+        const k2 = d < r ? 1 : d < r + 2.2 && rnd() < 0.55 ? 3 : -1;
+        if (k2 >= 0) { kind[i] = k2; kind[mirror(i)] = k2; }
+      }
+    }
+  }
 
   // Basisbereiche freiräumen
   const clear = (cx, cy, r) => {
@@ -408,6 +432,9 @@ function generateMap(seed) {
   clear(B0.x, B0.y, 10);
   // Mitte etwas offener
   clear(32, 32, 5);
+  if (mapType === 'forest') { // Lichtungen, damit es zwischen den Wäldern Platz gibt
+    for (let k = 0; k < 3; k++) clear(Math.floor(16 + rnd() * 32), Math.floor(6 + rnd() * 24), 3);
+  }
 
   // Garantierter Wald nahe der Basis (Spieler 0, gespiegelt für 1)
   const woodSide = rnd() < 0.5;
@@ -429,7 +456,10 @@ function generateMap(seed) {
     if (kind[i] === 3) G.forest[i] = 1;
   }
   for (let i = 0; i < NN; i++) updateTile(i);
-  for (let i = 0; i < NN; i++) if (kind[i] === 3) makeResource('wood', 'tree', i % N, Math.floor(i / N), 100);
+  for (let i = 0; i < NN; i++) if (kind[i] === 3) {
+    const t = makeResource('wood', 'tree', i % N, Math.floor(i / N), 100);
+    if (M.desert) t.var = 3; // Palme
+  }
 
   // Basisressourcen relativ zur Basis platzieren (für beide Spieler gespiegelt)
   const place = (x, y, fn) => { fn(x, y); fn(N - 1 - x, N - 1 - y); };
@@ -452,6 +482,7 @@ function generateMap(seed) {
   // Zusätzliche Vorkommen (gespiegelt)
   const extra = [['gold', 26 + Math.floor(rnd() * 6), 8 + Math.floor(rnd() * 6)], ['stone', 8 + Math.floor(rnd() * 6), 27 + Math.floor(rnd() * 6)],
     ['gold', 29 + Math.floor(rnd() * 3), 29 + Math.floor(rnd() * 3)], ['stone', 36 + Math.floor(rnd() * 5), 20 + Math.floor(rnd() * 5)]];
+  if (M.extraGold) extra.push(['gold', 12 + Math.floor(rnd() * 4), 41 + Math.floor(rnd() * 4)]);
   for (const [t, x, y] of extra) deposit(x, y, t, t === 'gold' ? 600 : 500);
   // Bestehende Felder um Lagerstätten nicht vollständig einschließen: Ring freiräumen
   for (const r of G.resources) {
@@ -1534,7 +1565,7 @@ function newPlayer(i) {
 function newGame(seed, diff, opts) {
   opts = opts || {};
   G = {
-    seed, diff, time: 0, nextId: 1, human: opts.headlessBothAI ? -1 : 0, headless: !!opts.headless,
+    seed, diff, map: MAPS[opts.map] ? opts.map : 'balanced', time: 0, nextId: 1, human: opts.headlessBothAI ? -1 : 0, headless: !!opts.headless,
     terr: new Uint8Array(NN), forest: new Uint8Array(NN), block: new Uint8Array(NN), gate: new Int8Array(NN).fill(-1),
     res: new Array(NN).fill(null), bld: new Array(NN).fill(null),
     resources: [], units: [], buildings: [], projectiles: [], effects: [], byId: new Map(), pathQueue: [],
@@ -1542,7 +1573,7 @@ function newGame(seed, diff, opts) {
     explored: new Uint8Array(NN), visible: new Uint8Array(NN), mmDirty: true, over: null, ais: [], groups: {},
     tick: 0, msgs: [],
   };
-  const info = generateMap(seed);
+  const info = generateMap(seed, G.map);
   for (let p = 0; p < 2; p++) {
     const b = info.bases[p];
     const tc = placeBuilding('tc', b.x, b.y, p, true);
@@ -2345,7 +2376,19 @@ function resourceSprite(sub, variant) {
   if (sub === 'tree') {
     c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(4, 2, 16, 7, 0, 0, Math.PI * 2); c.fill();
     c.fillStyle = '#5a3a1e'; c.fillRect(-2.5, -14, 5, 15);
-    if (variant === 0) { // Nadelbaum
+    if (variant === 3) { // Palme
+      c.strokeStyle = '#7a5530'; c.lineWidth = 4; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(0, -1); c.quadraticCurveTo(-6, -24, 2, -48); c.stroke();
+      c.strokeStyle = 'rgba(0,0,0,.18)'; c.lineWidth = 1;
+      for (let k = 0; k < 6; k++) { const y = -6 - k * 7; c.beginPath(); c.moveTo(-3.5, y); c.lineTo(1, y); c.stroke(); }
+      for (let k = 0; k < 7; k++) {
+        const a = -Math.PI + k * (Math.PI / 6) + (rnd() - 0.5) * 0.3, L = 16 + rnd() * 5;
+        const ex = 2 + Math.cos(a) * L, ey = -48 + Math.sin(a) * L * 0.6 + 8;
+        c.strokeStyle = shade(k % 2 ? '#4f8a2e' : '#3e7426', 0.9 + rnd() * 0.2); c.lineWidth = 4.5;
+        c.beginPath(); c.moveTo(2, -48); c.quadraticCurveTo(2 + Math.cos(a) * L * 0.5, -54 + Math.sin(a) * L * 0.3, ex, ey); c.stroke();
+      }
+      c.fillStyle = '#6b4a22'; c.beginPath(); c.arc(0, -46, 2.2, 0, Math.PI * 2); c.arc(4, -46, 2.2, 0, Math.PI * 2); c.fill();
+    } else if (variant === 0) { // Nadelbaum
       const greens = ['#2f5e2a', '#3b7032', '#4a8238'];
       for (let k = 0; k < 4; k++) {
         const y = -10 - k * 13, w = 18 - k * 3.5;
@@ -2410,16 +2453,17 @@ function buildTerrain() {
   c.fillStyle = '#0d0a06'; c.fillRect(0, 0, terrainCv.width, terrainCv.height);
   c.translate(TER_OX, TER_OY);
   const rnd = mulberry32(G.seed ^ 0x55aa);
+  const desert = !!MAPS[G.map].desert;
   const nearWater = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (inMap(x + dx, y + dy) && G.terr[(y + dy) * N + x + dx] === 1) return true; } return false; };
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const i = y * N + x; const t = G.terr[i];
     let col;
     const n = (Math.sin(x * 0.7 + y * 0.3) + Math.sin(x * 0.21 - y * 0.47) * 1.3 + rnd() * 0.8) * 0.06;
-    if (t === 1) col = shade('#2f6a96', 0.92 + n);
-    else if (t === 2) col = shade('#7d776c', 0.95 + n);
-    else if (nearWater(x, y)) col = shade('#c2b27a', 0.95 + n);
-    else if (G.forest[i]) col = shade('#4d7a32', 0.92 + n);
-    else col = shade('#6f9a40', 0.95 + n);
+    if (t === 1) col = shade(desert ? '#2f7a8e' : '#2f6a96', 0.92 + n);
+    else if (t === 2) col = shade(desert ? '#9a7a56' : '#7d776c', 0.95 + n);
+    else if (nearWater(x, y)) col = shade(desert ? '#7f9a48' : '#c2b27a', 0.95 + n);
+    else if (G.forest[i]) col = shade(desert ? '#b8a462' : '#4d7a32', 0.92 + n);
+    else col = shade(desert ? '#d6bb7f' : '#6f9a40', 0.95 + n);
     const pts = [P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)];
     c.beginPath(); c.moveTo(pts[0][0], pts[0][1] - 0.5); c.lineTo(pts[1][0] + 0.6, pts[1][1]); c.lineTo(pts[2][0], pts[2][1] + 0.5); c.lineTo(pts[3][0] - 0.6, pts[3][1]); c.closePath();
     c.fillStyle = col; c.fill();
@@ -2430,7 +2474,7 @@ function buildTerrain() {
     if (t === 0) {
       for (let k = 0; k < 3; k++) {
         const p = P(x + rnd(), y + rnd());
-        c.strokeStyle = rnd() < 0.5 ? 'rgba(40,70,20,.35)' : 'rgba(170,200,100,.25)'; c.lineWidth = 1;
+        c.strokeStyle = desert ? (rnd() < 0.5 ? 'rgba(120,90,40,.3)' : 'rgba(255,240,200,.25)') : rnd() < 0.5 ? 'rgba(40,70,20,.35)' : 'rgba(170,200,100,.25)'; c.lineWidth = 1;
         c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(p[0] - 1, p[1] - 3); c.moveTo(p[0], p[1]); c.lineTo(p[0] + 1.5, p[1] - 3); c.stroke();
       }
       if (rnd() < 0.03) { const p = P(x + rnd(), y + rnd()); c.fillStyle = rnd() < 0.5 ? '#e8e070' : '#f0f0f0'; c.fillRect(p[0], p[1], 2, 2); }
@@ -2439,7 +2483,7 @@ function buildTerrain() {
     } else if (t === 2) {
       for (let k = 0; k < 2; k++) {
         const p = P(x + 0.2 + rnd() * 0.6, y + 0.2 + rnd() * 0.6); const r = 5 + rnd() * 6;
-        c.fillStyle = shade('#6a655c', 0.85 + rnd() * 0.3);
+        c.fillStyle = shade(desert ? '#8a6a48' : '#6a655c', 0.85 + rnd() * 0.3);
         c.beginPath(); c.moveTo(p[0] - r, p[1]); c.lineTo(p[0] - r * 0.4, p[1] - r); c.lineTo(p[0] + r * 0.6, p[1] - r * 0.8); c.lineTo(p[0] + r, p[1]); c.closePath(); c.fill();
         c.fillStyle = 'rgba(255,255,255,.15)'; c.beginPath(); c.moveTo(p[0] - r * 0.4, p[1] - r); c.lineTo(p[0] + r * 0.6, p[1] - r * 0.8); c.lineTo(p[0], p[1] - r * 0.4); c.closePath(); c.fill();
       }
@@ -2828,7 +2872,7 @@ function updateMinimapTiles() {
     else if (t === 1) col = [47, 106, 150];
     else if (t === 2) col = [120, 116, 106];
     else if (r) col = r.sub === 'tree' ? [38, 82, 34] : r.sub === 'gold' ? [240, 200, 40] : r.sub === 'stone' ? [190, 190, 185] : r.sub === 'berry' ? [200, 60, 90] : [150, 100, 60];
-    else col = [100, 145, 60];
+    else col = MAPS[G.map].desert ? [214, 187, 127] : [100, 145, 60];
     d[i * 4] = col[0]; d[i * 4 + 1] = col[1]; d[i * 4 + 2] = col[2]; d[i * 4 + 3] = 255;
   }
   c.putImageData(img, 0, 0);
@@ -3118,7 +3162,7 @@ function showEnd() {
   const o = G.over; const win = o.winner === G.human;
   $('endTitle').textContent = win ? 'Sieg!' : 'Niederlage';
   $('endTitle').style.color = win ? '#2d6a1f' : '#7a1d16';
-  $('endSub').textContent = (win ? 'Die gegnerische Siedlung ist gefallen.' : 'Deine Siedlung wurde zerstört.') + ' Spielzeit ' + fmtTime(o.time) + ' · ' + DIFFS[G.diff].name;
+  $('endSub').textContent = (win ? 'Die gegnerische Siedlung ist gefallen.' : 'Deine Siedlung wurde zerstört.') + ' Spielzeit ' + fmtTime(o.time) + ' · ' + DIFFS[G.diff].name + ' · ' + MAPS[G.map].name;
   const s0 = G.players[0].stats, s1 = G.players[1].stats;
   const rows = [['Gesammelte Ressourcen', 'gathered'], ['Ausgebildete Einheiten', 'trained'], ['Errichtete Gebäude', 'built'], ['Getötete Feinde', 'kills'], ['Verlorene Einheiten', 'lost'], ['Zerstörte Gebäude', 'razed']];
   $('endStats').innerHTML = '<tr><th></th><th style="color:#2f6fd6">Du</th><th style="color:#d23a2e">KI</th></tr>' + rows.map(r => `<tr><td>${r[0]}</td><td>${Math.floor(s0[r[1]])}</td><td>${Math.floor(s1[r[1]])}</td></tr>`).join('');
@@ -3407,10 +3451,10 @@ function setupInput() {
   $('btnResume').addEventListener('click', () => togglePause());
   $('btnQuit').addEventListener('click', () => { running = false; paused = false; $('pauseScreen').classList.add('hidden'); showMenu(); });
   document.querySelectorAll('.diff').forEach(b => b.addEventListener('click', () => {
-    document.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+    b.parentNode.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
   }));
   $('btnStart').addEventListener('click', startGameFromMenu);
-  $('btnRestartSame').addEventListener('click', () => { $('endScreen').classList.add('hidden'); startGame(G.seed, G.diff); });
+  $('btnRestartSame').addEventListener('click', () => { $('endScreen').classList.add('hidden'); startGame(G.seed, G.diff, G.map); });
   $('btnNew').addEventListener('click', () => { $('endScreen').classList.add('hidden'); showMenu(); });
 }
 function zoomAt(sx, sy, nz) {
@@ -3459,13 +3503,14 @@ function showMenu() {
   $('topbar').classList.add('hidden'); $('bottom').classList.add('hidden');
 }
 function startGameFromMenu() {
-  const sel = document.querySelector('.diff.sel'); const diff = sel ? sel.dataset.d : 'medium';
+  const sel = document.querySelector('#diffChoice .diff.sel'); const diff = sel ? sel.dataset.d : 'medium';
+  const msel = document.querySelector('#mapChoice .diff.sel'); const map = msel ? msel.dataset.m : 'balanced';
   const txt = $('seedInput').value.trim();
   const seed = txt ? (/^\d+$/.test(txt) ? +txt : hashStr(txt)) : Math.floor(Math.random() * 1e9);
-  startGame(seed, diff);
+  startGame(seed, diff, map);
 }
-function startGame(seed, diff) {
-  newGame(seed, diff, {});
+function startGame(seed, diff, map) {
+  newGame(seed, diff, { map });
   UI.alerts = []; let lastAlert = -99;
   G.onHit = t => {
     if (G.time - lastAlert < 12) return;
@@ -3482,7 +3527,7 @@ function startGame(seed, diff) {
   cam.zoom = 1; centerOn(tc.x + 2, tc.y + 2);
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('pauseScreen').classList.add('hidden');
   $('topbar').classList.remove('hidden'); $('bottom').classList.remove('hidden');
-  $('diffLabel').textContent = 'Gegner: ' + DIFFS[diff].name + ' · Seed ' + seed;
+  $('diffLabel').textContent = 'Gegner: ' + DIFFS[diff].name + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + seed;
   paused = false; running = true; acc = 0;
   setSelection([tc]);
   notify('Willkommen in Burgfeld! Sammle Ressourcen, baue deine Siedlung aus und zerstöre den roten Gegner.');

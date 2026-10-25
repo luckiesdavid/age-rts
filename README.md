@@ -6,7 +6,7 @@ Alles steckt in einer einzigen Datei (`index.html`). Es gibt keine externen Graf
 
 ## Starten
 
-`index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit wählen, optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
+`index.html` per Doppelklick öffnen (Safari oder Chrome). Im Startbildschirm die Schwierigkeit und die Karte wählen (**Wüste**: Sand, Oasen mit Palmen, wenig Holz, ein zusätzliches Goldvorkommen · **Ausgeglichen**: Wiesen, Wälder und Seen · **Waldland**: dichte Wälder mit Lichtungen), optional einen Karten-Seed eingeben (gleicher Seed = gleiche Karte) und auf **Spiel starten** klicken.
 
 **Ziel:** Zerstöre alle gegnerischen Gebäude (Mauern zählen nicht) – oder sein Dorfzentrum und alle seine Einheiten. Umgekehrt verlierst du.
 

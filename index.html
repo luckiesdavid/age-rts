@@ -530,7 +530,7 @@ body.touch .touchKeys { display: block; }
       <b>Touchpad:</b> <b>zwei Finger schieben</b> Kamera, <b>Pinch</b> Zoom, <b>Klick mit zwei Fingern</b> Befehl<br>
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
       <b>Shift</b> zur Auswahl hinzufügen<br>
-      <b>Doppelklick</b> alle gleichen Einheiten im Bild<br>
+      <b>Doppelklick</b> oder <b>Cmd+Klick</b> alle gleichen Einheiten im Bild<br>
       <b>Rechtsklick</b> oder <b>Ctrl+Klick</b>: bewegen, angreifen, sammeln, bauen<br>
       <b>A + Klick</b> Angriffsbewegung (oder <b>Alt/Option+Rechtsklick</b>)<br>
       <b>WASD / Pfeiltasten</b>, Bildschirmrand: Kamera<br>
@@ -5560,7 +5560,7 @@ function showEnd() {
 /* ============================ 11. EINGABE ============================ */
 const INPUT = {
   mx: 0, my: 0, inside: false, keys: new Set(), down: false, downX: 0, downY: 0, dragging: false, dragBox: null,
-  lastClickT: 0, lastClickId: null, mmDown: false, midDown: false, midX: 0, midY: 0, camX: 0, camY: 0, lastGroupKey: null, lastGroupT: 0, edgeT: 0,
+  mmDown: false, midDown: false, midX: 0, midY: 0, camX: 0, camY: 0, lastGroupKey: null, lastGroupT: 0, edgeT: 0,
 };
 let paused = false, running = false;
 
@@ -5765,15 +5765,28 @@ function boxSelect(x0, y0, x1, y1, add) {
   if (add) { const set = new Set(UI.sel); for (const e of list) set.add(e); list = [...set]; }
   setSelection(list);
 }
-function selectSameOnScreen(e) {
-  const list = [];
+function selectSameOnScreen(e, add) {
+  const list = add ? UI.sel.filter(o => !o.dead) : [];
+  const has = new Set(list);
   const coll = e.kind === 'unit' ? G.units : G.buildings;
   for (const o of coll) {
-    if (o.dead || o.owner !== e.owner || o.type !== e.type) continue;
+    if (o.dead || o.owner !== e.owner || o.type !== e.type || has.has(o)) continue;
     const p = o.kind === 'unit' ? lerpPos(o) : o; const s = w2s(p.x, p.y);
     if (s.x >= 0 && s.x <= VW && s.y >= UI_TOP && s.y <= VH - UI_BOT) list.push(o);
   }
   setSelection(list);
+}
+// Doppelklick/Doppeltipp erkennen: der zweite Klick darf eine Nachbarfigur gleichen Typs treffen
+// oder knapp daneben gehen (Einheiten laufen, Gruppen stehen dicht); sys = Browser meldet Doppelklick
+const DBL = { t: -1e9, e: null, x: 0, y: 0 };
+function dblTarget(t, x, y, sys) {
+  const now = performance.now(), p = DBL.e;
+  const dist = Math.abs(x - DBL.x) + Math.abs(y - DBL.y);
+  const hit = p && !p.dead && (now - DBL.t < 500 || sys) &&
+    (!t ? dist < 30 : dist < 60 && (t === p || (t.kind === p.kind && t.type === p.type && t.owner === p.owner)));
+  if (hit) { DBL.e = null; DBL.t = -1e9; return t || p; }
+  DBL.e = t && (t.kind === 'unit' || t.kind === 'bld') ? t : null; DBL.t = now; DBL.x = x; DBL.y = y;
+  return null;
 }
 
 // Rechtsklick-Befehl: Ziel und Ort werden lokal bestimmt, die Ausführung übernimmt execAct
@@ -5857,12 +5870,13 @@ function setupInput() {
       const b = INPUT.dragBox; boxSelect(b.x0, b.y0, b.x1, b.y1, e.shiftKey);
     } else {
       const t = pickAt(e.clientX, e.clientY);
-      const now = performance.now();
-      if (t && now - INPUT.lastClickT < 350 && INPUT.lastClickId === t.id && (t.kind === 'unit' || t.kind === 'bld')) selectSameOnScreen(t);
+      const d = dblTarget(t, e.clientX, e.clientY, e.detail >= 2);
+      // Doppelklick oder Cmd+Klick: alle gleichen im Bild (mit Shift zur Auswahl hinzu)
+      if (d) selectSameOnScreen(d, e.shiftKey);
+      else if (e.metaKey && t && (t.kind === 'unit' || t.kind === 'bld')) selectSameOnScreen(t, e.shiftKey);
       else if (e.shiftKey && t && t.owner === G.human) {
         if (UI.selSet.has(t)) setSelection(UI.sel.filter(x => x !== t)); else setSelection(UI.sel.concat([t]));
       } else setSelection(t ? [t] : []);
-      INPUT.lastClickT = now; INPUT.lastClickId = t ? t.id : null;
     }
     INPUT.dragging = false; INPUT.dragBox = null;
   });
@@ -6832,7 +6846,7 @@ function netResumeSaved() {
    (mit Nachlauf) · zwei Finger: zoomen und schieben. Befehle laufen wie bei der Maus über issue(), der
    Mehrspieler-Lockstep bleibt also unverändert. */
 const TOUCH = { last: -1e9, mode: null, id: 0, x0: 0, y0: 0, x: 0, y: 0, cx: 0, cy: 0, timer: 0, multi: false,
-  lastTapT: 0, lastTapId: null, vx: 0, vy: 0, moveT: 0, kin: null, pinch: null, idleN: -1 };
+  vx: 0, vy: 0, moveT: 0, kin: null, pinch: null, idleN: -1 };
 function touchRecent(ms) { return performance.now() - TOUCH.last < (ms || 3000); }
 function tryFullscreen() {
   const el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -6858,10 +6872,8 @@ function touchToggle(t) {
 }
 function touchTap(x, y) {
   if (UI.cmdMode === 'amove') { commandAt(x, y, true); UI.cmdMode = null; refreshCommands(); return; }
-  const t = pickAt(x, y), now = performance.now();
-  const dbl = t && now - TOUCH.lastTapT < 350 && TOUCH.lastTapId === t.id;
-  TOUCH.lastTapT = now; TOUCH.lastTapId = t ? t.id : null;
-  if (dbl && t.owner === G.human && (t.kind === 'unit' || t.kind === 'bld')) { selectSameOnScreen(t); return; }
+  const t = pickAt(x, y), d = dblTarget(t, x, y, false);
+  if (d && d.owner === G.human) { selectSameOnScreen(d, TOUCH.multi); return; }
   if (TOUCH.multi) { touchToggle(t); return; }
   const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
   const canOrder = own.some(e => e.kind === 'unit' || (e.kind === 'bld' && BUILDINGS[e.type].trains));

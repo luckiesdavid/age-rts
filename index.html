@@ -2,27 +2,34 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#2b1f13">
 <title>Burgfeld</title>
 <style>
 :root {
   --wood: #3a2a19; --wood2: #5b4127; --wood3: #21170d;
   --brass: #c9a24f; --brass2: #8a6a3a; --parch: #f0e3c2; --ink: #2a1d10;
   --ok: #7fd36b; --bad: #e0584a;
+  --topH: 40px; --botH: 184px; /* Höhe der Leisten (Handy: siehe unten) */
+  --safeL: env(safe-area-inset-left, 0px); --safeR: env(safe-area-inset-right, 0px); --safeB: env(safe-area-inset-bottom, 0px);
 }
 * { box-sizing: border-box; }
 html, body {
   margin: 0; height: 100%; overflow: hidden; background: #120e09;
   font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
   color: var(--parch); user-select: none; -webkit-user-select: none;
+  touch-action: manipulation; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
 }
-#game { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; }
+#game { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; touch-action: none; }
 .hidden { display: none !important; }
 
 /* ---------- Obere Leiste ---------- */
 #topbar {
-  position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 5;
-  display: flex; align-items: center; gap: 22px; padding: 0 16px;
+  position: fixed; top: 0; left: 0; right: 0; height: var(--topH); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 calc(16px + var(--safeR)) 0 calc(16px + var(--safeL));
   background: linear-gradient(#56402a, #2b1f13); border-bottom: 2px solid var(--brass2);
   box-shadow: 0 2px 10px rgba(0,0,0,.5); font-size: 15px;
 }
@@ -45,7 +52,8 @@ html, body {
 
 /* ---------- Untere Leiste ---------- */
 #bottom {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 184px; z-index: 5; display: flex;
+  position: fixed; left: 0; right: 0; bottom: 0; height: calc(var(--botH) + var(--safeB)); z-index: 5; display: flex;
+  padding: 0 var(--safeR) var(--safeB) var(--safeL);
   background: linear-gradient(#3d2c1b, #1f160d); border-top: 2px solid var(--brass2);
   box-shadow: 0 -2px 12px rgba(0,0,0,.5);
 }
@@ -98,12 +106,12 @@ html, body {
 #tooltip .cost span { display: flex; align-items: center; gap: 4px; }
 #tooltip .cost .no { color: var(--bad); }
 
-#msgs { position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none; text-align: center; }
+#msgs { position: fixed; top: calc(var(--topH) + 14px); left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none; text-align: center; }
 #msgs div { background: rgba(20,14,8,.78); border: 1px solid #6b4f31; padding: 5px 14px; margin-bottom: 5px; border-radius: 4px;
   font-size: 15px; transition: opacity .5s; }
 #msgs div.warn { color: #ffb0a0; border-color: #a5463a; }
 
-#fps { position: fixed; right: 8px; top: 46px; z-index: 6; font: 11px monospace; color: #cbb; opacity: .6; pointer-events: none; }
+#fps { position: fixed; right: calc(8px + var(--safeR)); top: calc(var(--topH) + 6px); z-index: 6; font: 11px monospace; color: #cbb; opacity: .6; pointer-events: none; }
 
 /* ---------- Bildschirme ---------- */
 .screen {
@@ -148,7 +156,7 @@ html, body {
 #mpLink { margin: 8px auto 0; padding: 7px 10px; max-width: 100%; overflow-wrap: anywhere; font: 14px monospace; user-select: all;
   background: #fbf3dd; border: 1px solid #9c7c4a; border-radius: 4px; }
 #mpLobby { margin-top: 10px; text-align: center; }
-#netWait { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 25; pointer-events: none;
+#netWait { position: fixed; top: calc(var(--topH) + 50px); left: 50%; transform: translateX(-50%); z-index: 25; pointer-events: none;
   background: rgba(20,14,8,.85); border: 1px solid #a5463a; padding: 8px 18px; border-radius: 4px; font-size: 16px; }
 .stats { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; }
 .stats td, .stats th { padding: 5px 8px; border-bottom: 1px solid #c4a874; text-align: right; }
@@ -177,6 +185,96 @@ html, body {
 .sbtn.del { background: none; color: #7a1d16; border-color: #b89a63; padding: 6px 9px; }
 .sbtn:disabled { opacity: .4; cursor: default; }
 #saveHint { text-align: center; font-size: 13px; color: #6b4a2b; margin-top: 10px; min-height: 18px; }
+/* ---------- Handymodus ---------- */
+/* Touch-Leiste (nur auf Touch-Geräten) */
+#touchBar { position: fixed; left: calc(8px + var(--safeL)); top: calc(var(--topH) + 8px); z-index: 6; display: flex; gap: 6px; }
+.tchBtn { height: 36px; min-width: 44px; padding: 0 11px; border-radius: 18px; font-family: inherit; font-size: 13px; color: var(--parch);
+  background: rgba(43,31,19,.86); border: 1px solid var(--brass2); box-shadow: 0 2px 6px rgba(0,0,0,.45); white-space: nowrap; }
+.tchBtn.on { border-color: #ffd98a; color: #ffd98a; box-shadow: inset 0 0 0 1px #ffd98a, 0 2px 6px rgba(0,0,0,.45); }
+.tchBtn b { font-weight: normal; color: #ffd98a; }
+#placeBar { position: fixed; right: calc(8px + var(--safeR)); top: calc(var(--topH) + 8px); z-index: 7; display: flex; gap: 8px; }
+#placeBar button { height: 42px; padding: 0 16px; border-radius: 21px; font-family: inherit; font-size: 15px; color: #fff; white-space: nowrap;
+  border: 1px solid rgba(0,0,0,.6); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+#btnPlaceOk { background: linear-gradient(#4f9a3a, #2d6a1f); }
+#btnPlaceNo { background: linear-gradient(#8e3a2c, #5a1d14); }
+body:not(.touch) #touchBar, body:not(.touch) #placeBar { display: none !important; }
+body.touch #msgs { top: calc(var(--topH) + 52px); }
+body.touch .cbtn .hk { display: none; }
+body.touch #fps { top: auto; bottom: calc(var(--botH) + var(--safeB) + 4px); }
+body.touch .mouseKeys, .touchKeys { display: none; }
+body.touch .touchKeys { display: block; }
+@media (hover: none) {
+  .cbtn:hover { border-color: #7a5a32; background: linear-gradient(#5a4128, #33251a); }
+  .cbtn.active:hover { border-color: #ffd98a; }
+}
+/* Handy quer: niedrige Leisten, kleinere Minikarte, zwei Reihen Befehle */
+@media (max-height: 540px) {
+  :root { --topH: 32px; --botH: 118px; }
+  #topbar { gap: 10px; font-size: 13px; }
+  .res { min-width: 50px; gap: 5px; }
+  .ico { width: 13px; height: 13px; }
+  #diffLabel { display: none; }
+  .tbtn { padding: 3px 10px; font-size: 13px; }
+  #mmWrap { width: 152px; padding: 6px; }
+  #minimap { width: 140px; height: 70px; }
+  #selInfo { padding: 6px 10px; font-size: 12px; }
+  #cmds { width: 284px; padding: 6px; grid-template-columns: repeat(5, 50px); grid-auto-rows: 50px; gap: 5px; overflow-y: auto; }
+  .cbtn img { width: 46px; height: 46px; margin-top: -9px; }
+  .cbtn.txt { font-size: 11px; padding: 6px 2px 0; }
+  .selTitle { font-size: 15px; margin-bottom: 2px; gap: 6px; }
+  .selTitle img { width: 28px; height: 28px; }
+  .hpbar { height: 6px; margin: 2px 0; }
+  .sub { font-size: 11.5px; }
+  .queue { margin-top: 3px; }
+  .qitem { width: 30px; height: 30px; } .qitem img { width: 28px; height: 28px; }
+  .multi { gap: 4px; margin-top: 4px; }
+  .mitem { width: 36px; height: 36px; } .mitem img { width: 34px; height: 34px; }
+  #msgs div { font-size: 13px; padding: 3px 10px; }
+  .panel { padding: 16px 22px; max-height: calc(100vh - 16px); }
+  .panel h1 { font-size: 34px; letter-spacing: 4px; }
+  .panel h2 { margin-bottom: 8px; font-size: 15px; }
+  .panel h3 { margin: 10px 0 6px; }
+  .diff { padding: 7px 6px; font-size: 15px; }
+  .bigbtn { margin-top: 12px; padding: 9px 36px; font-size: 18px; }
+  .bigbtn.alt { margin-top: 8px; }
+  .endTitle { font-size: 40px !important; }
+}
+/* Handy hoch: Minikarte und Auswahl oben, Befehle darunter in voller Breite */
+@media (max-width: 600px) {
+  :root { --topH: 36px; --botH: 200px; }
+  #topbar { gap: 8px; padding: 0 calc(8px + var(--safeR)) 0 calc(8px + var(--safeL)); font-size: 13px; }
+  .res { min-width: 0; gap: 4px; }
+  .ico { width: 13px; height: 13px; }
+  #topRight { gap: 6px; }
+  #diffLabel, #clock { display: none; }
+  .tbtn { padding: 4px 10px; font-size: 13px; }
+  #bottom { display: grid; grid-template-columns: 132px minmax(0, 1fr); grid-template-rows: 72px minmax(0, 1fr); }
+  #mmWrap { width: auto; padding: 4px; border-bottom: 1px solid #5a4128; }
+  #minimap { width: 124px; height: 62px; }
+  #selInfo { padding: 5px 8px; border-right: 0; border-bottom: 1px solid #5a4128; font-size: 12px; }
+  #cmds { grid-column: 1 / -1; width: auto; padding: 6px; grid-template-columns: repeat(5, minmax(0, 64px)); grid-auto-rows: 54px; gap: 6px; overflow-y: auto; }
+  .selTitle { font-size: 14px; margin-bottom: 1px; gap: 6px; }
+  .selTitle img { width: 24px; height: 24px; }
+  .hpbar { height: 5px; margin: 2px 0; }
+  .sub { font-size: 11px; }
+  .queue { margin-top: 2px; }
+  .qitem { width: 24px; height: 24px; } .qitem img { width: 22px; height: 22px; }
+  .multi { gap: 3px; margin-top: 2px; }
+  .mitem { width: 30px; height: 30px; } .mitem img { width: 28px; height: 28px; }
+  .mitem span { font-size: 10px; }
+  #touchBar { flex-direction: column; align-items: stretch; }
+  .tchBtn { padding: 0 9px; }
+  body.touch #msgs { top: calc(var(--topH) + 10px); left: calc(50% + 44px); width: calc(100vw - 112px); }
+  #msgs div { font-size: 13px; padding: 3px 8px; }
+  .panel { padding: 18px 16px; }
+  .panel h1 { font-size: 36px; letter-spacing: 4px; }
+  .diffs { gap: 6px; }
+  .diff { padding: 9px 4px; font-size: 15px; }
+  .keys { columns: 1; }
+  .mpCols { flex-direction: column; }
+  .bigbtn.alt { padding: 9px 18px; }
+  .endTitle { font-size: 42px !important; }
+}
 </style>
 </head>
 <body>
@@ -201,6 +299,15 @@ html, body {
   <div id="selInfo"></div>
   <div id="cmds"></div>
 </div>
+
+<div id="touchBar" class="hidden">
+  <button class="tchBtn" id="tbDesel">✕ Abwählen</button>
+  <button class="tchBtn" id="tbMulti">+ Mehrfach</button>
+  <button class="tchBtn" id="tbIdle">Untätig</button>
+  <button class="tchBtn" id="tbTC">Zentrum</button>
+  <button class="tchBtn" id="tbArmy">Armee</button>
+</div>
+<div id="placeBar" class="hidden"><button id="btnPlaceOk">✓ Bauen</button><button id="btnPlaceNo">✕ Abbrechen</button></div>
 
 <div id="tooltip" class="hidden"></div>
 <div id="msgs"></div>
@@ -230,7 +337,16 @@ html, body {
       <button class="bigbtn alt" id="btnMP">Mehrspieler über das Internet</button>
     </div>
     <h3>Steuerung</h3>
-    <div class="keys">
+    <div class="keys touchKeys">
+      <b>Tippen</b> auswählen; mit Auswahl: bewegen, angreifen, sammeln, bauen<br>
+      <b>Lange drücken</b> nur auswählen, <b>lange drücken und ziehen</b> Rahmenauswahl<br>
+      <b>Doppelt tippen</b> alle gleichen Einheiten im Bild<br>
+      <b>Wischen</b> Kamera bewegen, <b>zwei Finger</b> zoomen<br>
+      <b>Minikarte</b> antippen: Kamera springt hin<br>
+      <b>Befehlsknopf lange drücken</b> zeigt Kosten und Infos<br>
+      <b>Abwählen / Mehrfach / Untätig / Zentrum / Armee</b> oben links im Spiel
+    </div>
+    <div class="keys mouseKeys">
       <b>Linksklick</b> auswählen, <b>Ziehen</b> Rahmenauswahl<br>
       <b>Shift</b> zur Auswahl hinzufügen<br>
       <b>Doppelklick</b> alle gleichen Einheiten im Bild<br>
@@ -2330,11 +2446,33 @@ const cam = { x: 0, y: 0, zoom: 1 };
 const HALF_W = TW / 2, HALF_H = TH / 2;
 const SPR_S = 2; // Auflösungsfaktor der vorgerenderten Sprites
 
+// Touch-Gerät (Handy/Tablet)? Zum Testen am Rechner: index.html#touch
+const IS_TOUCH = /[#&]touch\b/.test(location.hash) || (navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches);
+// Höhe der oberen und unteren Leiste (hängt von der Bildschirmgröße ab, siehe CSS)
+let UI_TOP = 40, UI_BOT = 184;
+// Handys: Auflösung sinkt automatisch, wenn die Bildrate zu niedrig ist (nur Darstellung, nicht die Simulation)
+const PERF = { dprMax: 2, t: 0, n: 0 };
 function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1);
+  DPR = Math.min(PERF.dprMax, window.devicePixelRatio || 1);
   VW = window.innerWidth; VH = window.innerHeight;
   canvas.width = Math.round(VW * DPR); canvas.height = Math.round(VH * DPR);
   mmCanvas.width = 276 * DPR; mmCanvas.height = 138 * DPR;
+  layoutUI();
+}
+function layoutUI() {
+  const cs = getComputedStyle(document.documentElement);
+  UI_TOP = document.getElementById('topbar').offsetHeight || parseFloat(cs.getPropertyValue('--topH')) || 40;
+  UI_BOT = document.getElementById('bottom').offsetHeight || parseFloat(cs.getPropertyValue('--botH')) || 184;
+  const narrow = VW <= 600;
+  document.getElementById('btnPause').textContent = narrow ? '❚❚' : IS_TOUCH ? 'Pause' : 'Pause (P)';
+  document.getElementById('btnMenu').textContent = narrow ? '☰' : 'Menü';
+}
+function perfTick(dt) {
+  if (!IS_TOUCH || paused || PERF.dprMax <= 1) return;
+  PERF.t += dt; PERF.n++;
+  if (PERF.t < 2.5) return;
+  const fps = PERF.n / PERF.t; PERF.t = 0; PERF.n = 0;
+  if (fps < 40 && DPR > 1) { PERF.dprMax = Math.max(1, DPR - 0.5); resize(); }
 }
 // Welt (Kacheln) -> Bildschirm
 function w2s(wx, wy, wz) {
@@ -2352,7 +2490,8 @@ function clampCam() {
   cam.x = clamp(cam.x, minX + 100, maxX - 100);
   cam.y = clamp(cam.y, minY - 60, maxY + 60);
 }
-function centerOn(wx, wy) { cam.x = (wx - wy) * HALF_W; cam.y = (wx + wy) * HALF_H + 40 / cam.zoom; clampCam(); }
+// etwas unterhalb der Mitte des Spielbereichs, weil Gebäude nach oben ragen
+function centerOn(wx, wy) { cam.x = (wx - wy) * HALF_W; cam.y = (wx + wy) * HALF_H + (UI_BOT - UI_TOP) * 0.3 / cam.zoom; clampCam(); }
 
 /* ---------- Farb-Helfer ---------- */
 function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
@@ -3492,7 +3631,7 @@ function render() {
   // Bauvorschau
   drawPlacementPreview();
   // Auswahlrahmen
-  if (INPUT.dragging && INPUT.dragBox) {
+  if (INPUT.dragBox) {
     const b = INPUT.dragBox;
     ctx.strokeStyle = '#d8ffcf'; ctx.lineWidth = 1; ctx.fillStyle = 'rgba(160,255,140,.08)';
     ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.strokeRect(b.x0 + 0.5, b.y0 + 0.5, b.x1 - b.x0, b.y1 - b.y0);
@@ -3677,7 +3816,7 @@ function renderMinimap(dt) {
   }
   c.restore();
   // Kamera-Ausschnitt
-  const corners = [s2w(0, 40), s2w(VW, 40), s2w(VW, VH - 184), s2w(0, VH - 184)];
+  const corners = [s2w(0, UI_TOP), s2w(VW, UI_TOP), s2w(VW, VH - UI_BOT), s2w(0, VH - UI_BOT)];
   c.strokeStyle = '#fff'; c.lineWidth = 1; c.beginPath();
   corners.forEach((w, k) => { const x = (w.x - w.y) * MM_KX + MM_W / 2, y = (w.x + w.y) * MM_KY; if (k) c.lineTo(x, y); else c.moveTo(x, y); });
   c.closePath(); c.stroke();
@@ -3739,8 +3878,13 @@ function cmdButton(opts) {
   if (opts.label) { const l = document.createElement('span'); l.className = 'lbl'; l.textContent = opts.label; b.appendChild(l); }
   if (opts.hotkey) { const h = document.createElement('span'); h.className = 'hk'; h.textContent = opts.hotkey; b.appendChild(h); }
   if (opts.hotkey && opts.hotkey.length === 1 && !opts.disabledKey) UI.hotkeys[opts.hotkey] = e => opts.onClick(e);
-  b.addEventListener('mouseenter', () => { const r = b.getBoundingClientRect(); showTooltip(opts.tip(), r.left + r.width / 2, r.top); });
+  const tipNow = () => { const r = b.getBoundingClientRect(); showTooltip(opts.tip(), r.left + r.width / 2, r.top); };
+  b.addEventListener('mouseenter', () => { if (!touchRecent()) tipNow(); });
   b.addEventListener('mouseleave', hideTooltip);
+  // Touch: langes Drücken zeigt den Tooltip (Kosten, Infos) statt den Befehl auszulösen
+  b.addEventListener('touchstart', () => { clearTimeout(b.lpT); b.lpShown = false; b.lpT = setTimeout(() => { if (b.isConnected) { tipNow(); b.lpShown = true; } }, 380); }, { passive: true });
+  b.addEventListener('touchmove', () => clearTimeout(b.lpT), { passive: true });
+  b.addEventListener('touchend', e => { clearTimeout(b.lpT); if (b.lpShown) { e.preventDefault(); setTimeout(hideTooltip, 1400); } });
   b.tabIndex = -1;
   b.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
   b.addEventListener('click', e => { e.stopPropagation(); opts.onClick(e); });
@@ -3794,7 +3938,7 @@ function refreshCommands() {
         const ud = UNITS[ut];
         box.appendChild(cmdButton({
           icon: ICONS[ut], label: ud.name, hotkey: TRAIN_KEYS[k], disabled: !canAfford(p, ud.cost),
-          tip: () => `<div class="tt">${ud.name}</div>${costHtml(ud.cost, p)}${ud.desc}<br><span style="opacity:.75">LP ${ud.hp} · Angriff ${ud.atkBld || ud.atk}${ud.range > 1 ? ' · Reichweite ' + ud.range : ''} · Bev. ${ud.pop} · ${ud.time}s</span><br><i>Shift+Klick: 5×</i>`,
+          tip: () => `<div class="tt">${ud.name}</div>${costHtml(ud.cost, p)}${ud.desc}<br><span style="opacity:.75">LP ${ud.hp} · Angriff ${ud.atkBld || ud.atk}${ud.range > 1 ? ' · Reichweite ' + ud.range : ''} · Bev. ${ud.pop} · ${ud.time}s</span>${IS_TOUCH ? '' : '<br><i>Shift+Klick: 5×</i>'}`,
           onClick: e => { issue({ c: 'train', ids: blds.filter(x => x.type === b.type).map(x => x.id), type: ut, n: e.shiftKey ? 5 : 1 }); refreshPanel(true); },
         }));
       });
@@ -3802,7 +3946,24 @@ function refreshCommands() {
     box.appendChild(cmdButton({ text: 'Abreißen', hotkey: 'Entf', tip: () => '<div class="tt">Abreißen (Entf)</div>Gebäude zerstören. Unfertige Gebäude erstatten einen Teil der Kosten.', onClick: () => deleteSelection() }));
   }
 }
+function selectIdleVillager() {
+  const idle = G.units.filter(u => !u.dead && u.owner === G.human && u.type === 'villager' && !u.order);
+  if (idle.length) { UI.idleIdx = ((UI.idleIdx || 0) + 1) % idle.length; const u = idle[UI.idleIdx]; setSelection([u]); centerOn(u.x, u.y); }
+  else notifyLocal('Keine untätigen Dorfbewohner.');
+}
+function selectTownCenter() {
+  const tcs = G.buildings.filter(b => !b.dead && b.owner === G.human && b.type === 'tc');
+  if (tcs.length) { const i = (tcs.indexOf(UI.sel[0]) + 1) % tcs.length; setSelection([tcs[i]]); centerOn(tcs[i].x, tcs[i].y); }
+}
 function notifyLocal(t, warn) { G.msgs.push({ text: t, warn: warn !== false, t: G.time }); }
+// Esc bzw. Touch-Knopf „Abwählen“: einen Schritt zurück
+function escapeAction() {
+  if (UI.placing) cancelPlacing();
+  else if (UI.cmdMode) UI.cmdMode = null;
+  else if (UI.buildMenu) UI.buildMenu = null;
+  else setSelection([]);
+  refreshCommands();
+}
 function deleteSelection() {
   const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
   if (!own.length) return;
@@ -3823,7 +3984,7 @@ function refreshPanel(force) {
   if (force || key !== UI.lastSelKey || affordKey !== UI.lastAfford) { refreshCommands(); UI.lastSelKey = key; UI.lastAfford = affordKey; }
   if (!UI.sel.length) {
     const idle = G.units.filter(u => !u.dead && u.owner === G.human && u.type === 'villager' && !u.order).length;
-    info.innerHTML = `<div class="sub" style="opacity:.6">Nichts ausgewählt.</div>` + (idle ? `<div class="sub">Untätige Dorfbewohner: <b>${idle}</b> (Taste <b>.</b>)</div>` : '');
+    info.innerHTML = `<div class="sub" style="opacity:.6">Nichts ausgewählt.</div>` + (idle ? `<div class="sub">Untätige Dorfbewohner: <b>${idle}</b> ${IS_TOUCH ? '(Knopf „Untätig“)' : '(Taste <b>.</b>)'}</div>` : '');
     return;
   }
   if (UI.sel.length === 1) {
@@ -3849,7 +4010,7 @@ function refreshPanel(force) {
       info.innerHTML = `<div class="selTitle"><img src="${ICONS[e.type]}">${d.name}</div>
         <div class="hpbar"><div style="width:${e.hp / e.maxHp * 100}%"></div></div>
         <div class="sub">LP ${Math.ceil(e.hp)} / ${e.maxHp} · ${owner}</div>
-        ${d.gaia ? '<div class="sub">Dorfbewohner können es per Rechtsklick jagen.</div>' : `<div class="sub">Angriff ${d.bldOnly ? d.atkBld + ' (nur Gebäude)' : d.atk}${d.atkBld && !d.bldOnly ? ' / ' + d.atkBld + ' gg. Gebäude' : ''} · ${d.range > 1 ? 'Reichweite ' + d.range + (d.minRange ? ' (min. ' + d.minRange + ')' : '') : 'Nahkampf'}</div>
+        ${d.gaia ? `<div class="sub">Dorfbewohner können es per ${IS_TOUCH ? 'Antippen' : 'Rechtsklick'} jagen.</div>` : `<div class="sub">Angriff ${d.bldOnly ? d.atkBld + ' (nur Gebäude)' : d.atk}${d.atkBld && !d.bldOnly ? ' / ' + d.atkBld + ' gg. Gebäude' : ''} · ${d.range > 1 ? 'Reichweite ' + d.range + (d.minRange ? ' (min. ' + d.minRange + ')' : '') : 'Nahkampf'}</div>
         <div class="sub">${state}</div>`}`;
       return;
     }
@@ -3865,14 +4026,14 @@ function refreshPanel(force) {
         if (d.pop) facts.push('+' + d.pop + ' Bevölkerung');
         if (facts.length) html += `<div class="sub">${facts.join(' · ')}</div>`;
         if (d.attack) html += `<div class="sub">Schießt Pfeile: ${d.attack.dmg} Schaden, Reichweite ${d.attack.range}</div>`;
-        if (d.farm) { const f = e.farmer && G.byId.get(e.farmer); html += `<div class="sub">${f && !f.dead ? 'Wird bewirtschaftet' : 'Frei – Dorfbewohner per Rechtsklick zuweisen'}</div>`; }
+        if (d.farm) { const f = e.farmer && G.byId.get(e.farmer); html += `<div class="sub">${f && !f.dead ? 'Wird bewirtschaftet' : 'Frei – Dorfbewohner per ' + (IS_TOUCH ? 'Antippen' : 'Rechtsklick') + ' zuweisen'}</div>`; }
         if (d.gate) html += `<div class="sub">Eigene Einheiten können passieren.</div>`;
       }
       if (own && e.queue.length) {
         html += '<div class="queue">' + e.queue.map((q, k) => `<div class="qitem" data-q="${k}" title="Klicken zum Abbrechen"><img src="${ICONS[q.type]}">${k === 0 ? `<div class="qp" style="width:${q.t / UNITS[q.type].time * 100}%"></div>` : ''}<span class="qx">✕</span></div>`).join('') + '</div>';
         if (e.popBlocked) html += '<div class="sub" style="color:#ffb0a0">Bevölkerungslimit erreicht – baue Häuser!</div>';
       }
-      if (own && d.trains && e.built && !e.queue.length) html += `<div class="sub" style="opacity:.6;margin-top:4px">Rechtsklick auf die Karte setzt den Sammelpunkt.</div>`;
+      if (own && d.trains && e.built && !e.queue.length) html += `<div class="sub" style="opacity:.6;margin-top:4px">${IS_TOUCH ? 'Auf die Karte tippen' : 'Rechtsklick auf die Karte'} setzt den Sammelpunkt.</div>`;
       info.innerHTML = html;
       info.querySelectorAll('.qitem').forEach(el => el.addEventListener('click', () => { const q = e.queue[+el.dataset.q]; if (q) issue({ c: 'unq', id: e.id, q: q.id }); refreshPanel(true); }));
       return;
@@ -3907,6 +4068,7 @@ function startPlacing(type) {
   const p = G.players[G.human];
   if (!canAfford(p, BUILDINGS[type].cost)) { notifyLocal('Nicht genug Ressourcen für ' + BUILDINGS[type].name + '.'); return; }
   UI.placing = { type, tx: 0, ty: 0, lineStart: null };
+  if (touchRecent()) { INPUT.mx = VW / 2; INPUT.my = (UI_TOP + VH - UI_BOT) / 2; }
   updatePlacingPos();
   refreshCommands();
 }
@@ -3955,8 +4117,8 @@ const INPUT = {
 };
 let paused = false, running = false;
 
-function inGameArea(x, y) { return y > 40 && y < VH - 184; }
-function overUI(x, y) { return y <= 40 || y >= VH - 184; }
+function inGameArea(x, y) { return y > UI_TOP && y < VH - UI_BOT; }
+function overUI(x, y) { return y <= UI_TOP || y >= VH - UI_BOT; }
 
 // Was liegt unter dem Mauszeiger?
 function pickAt(sx, sy) {
@@ -4019,7 +4181,7 @@ function selectSameOnScreen(e) {
   for (const o of coll) {
     if (o.dead || o.owner !== e.owner || o.type !== e.type) continue;
     const p = o.kind === 'unit' ? lerpPos(o) : o; const s = w2s(p.x, p.y);
-    if (s.x >= 0 && s.x <= VW && s.y >= 40 && s.y <= VH - 184) list.push(o);
+    if (s.x >= 0 && s.x <= VW && s.y >= UI_TOP && s.y <= VH - UI_BOT) list.push(o);
   }
   setSelection(list);
 }
@@ -4049,6 +4211,7 @@ function issue(cmd) {
 function setupInput() {
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   window.addEventListener('mousemove', e => {
+    if (touchRecent(800)) return; // vom Browser nachgeahmte Mausereignisse nach einer Berührung
     INPUT.mx = e.clientX; INPUT.my = e.clientY; INPUT.inside = true;
     if (!running) return;
     if (INPUT.midDown) {
@@ -4062,7 +4225,7 @@ function setupInput() {
     if (INPUT.mmDown) minimapJump(e);
   });
   document.addEventListener('mouseleave', () => { INPUT.inside = false; });
-  document.addEventListener('mouseenter', () => { INPUT.inside = true; });
+  document.addEventListener('mouseenter', () => { if (!touchRecent(800)) INPUT.inside = true; });
   window.addEventListener('blur', () => { INPUT.keys.clear(); INPUT.inside = false; });
 
   canvas.addEventListener('mousedown', e => {
@@ -4125,7 +4288,7 @@ function setupInput() {
   }, { passive: false });
   let gStart = 1;
   canvas.addEventListener('gesturestart', e => { e.preventDefault(); gStart = cam.zoom; });
-  canvas.addEventListener('gesturechange', e => { e.preventDefault(); if (running) zoomAt(INPUT.mx, INPUT.my, gStart * e.scale); });
+  canvas.addEventListener('gesturechange', e => { e.preventDefault(); if (running && !touchRecent()) zoomAt(INPUT.mx, INPUT.my, gStart * e.scale); });
   canvas.addEventListener('gestureend', e => e.preventDefault());
 
   // Minikarte
@@ -4147,13 +4310,7 @@ function setupInput() {
     if (k === ' ' || k === 'p') { e.preventDefault(); togglePause(); return; }
     if (paused) return;
     INPUT.keys.add(k);
-    if (k === 'escape') {
-      if (UI.placing) cancelPlacing();
-      else if (UI.cmdMode) UI.cmdMode = null;
-      else if (UI.buildMenu) UI.buildMenu = null;
-      else setSelection([]);
-      refreshCommands(); return;
-    }
+    if (k === 'escape') { escapeAction(); return; }
     const digit = e.code && e.code.startsWith('Digit') ? +e.code.slice(5) : (k >= '0' && k <= '9' ? +k : -1);
     if (digit >= 1 && digit <= 9) {
       e.preventDefault();
@@ -4170,17 +4327,8 @@ function setupInput() {
       }
       return;
     }
-    if (k === 'h') {
-      const tcs = G.buildings.filter(b => !b.dead && b.owner === G.human && b.type === 'tc');
-      if (tcs.length) { const i = (tcs.indexOf(UI.sel[0]) + 1) % tcs.length; setSelection([tcs[i]]); centerOn(tcs[i].x, tcs[i].y); }
-      return;
-    }
-    if (k === '.' || k === ',' && false) {
-      const idle = G.units.filter(u => !u.dead && u.owner === G.human && u.type === 'villager' && !u.order);
-      if (idle.length) { UI.idleIdx = ((UI.idleIdx || 0) + 1) % idle.length; const u = idle[UI.idleIdx]; setSelection([u]); centerOn(u.x, u.y); }
-      else notifyLocal('Keine untätigen Dorfbewohner.');
-      return;
-    }
+    if (k === 'h') { selectTownCenter(); return; }
+    if (k === '.') { selectIdleVillager(); return; }
     if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelection(); return; }
     // kontextabhängige Tastenkürzel der Befehlsleiste
     const hk = k.toUpperCase();
@@ -4206,7 +4354,7 @@ function setupInput() {
   // Buttons
   $('btnPause').addEventListener('click', () => togglePause());
   $('btnMenu').addEventListener('click', () => { if (!paused) togglePause(); });
-  $('btnResume').addEventListener('click', () => togglePause());
+  $('btnResume').addEventListener('click', () => { togglePause(); tryFullscreen(); });
   $('btnQuit').addEventListener('click', () => { running = false; paused = false; $('pauseScreen').classList.add('hidden'); netClose(true); showMenu(); });
   document.querySelectorAll('.diff').forEach(b => b.addEventListener('click', () => {
     b.parentNode.querySelectorAll('.diff').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
@@ -4248,7 +4396,14 @@ function updateCamera(dt) {
   if (k.has('arrowright') || k.has('d')) dx += sp;
   if (k.has('arrowup') || k.has('w')) dy -= sp;
   if (k.has('arrowdown') || k.has('s')) dy += sp;
-  if (INPUT.inside && !INPUT.down && !INPUT.midDown && document.hasFocus()) {
+  // Touch: Nachlauf nach dem Wischen
+  const kin = TOUCH.kin;
+  if (kin) {
+    dx -= kin.vx * dt / cam.zoom; dy -= kin.vy * dt / cam.zoom;
+    const f = Math.exp(-dt * 4.5); kin.vx *= f; kin.vy *= f;
+    if (Math.hypot(kin.vx, kin.vy) < 25) TOUCH.kin = null;
+  }
+  if (INPUT.inside && !INPUT.down && !INPUT.midDown && !IS_TOUCH && !touchRecent() && document.hasFocus()) {
     const m = 6;
     if (INPUT.mx <= m) dx -= sp; else if (INPUT.mx >= VW - m) dx += sp;
     if (INPUT.my <= m) dy -= sp; else if (INPUT.my >= VH - m) dy += sp;
@@ -4450,6 +4605,162 @@ function netStartGame(seed, delay, map) {
   startGame(seed, null, map, { net: true, human: NET.me });
 }
 
+/* ---------- Handymodus: Touch-Steuerung ----------
+   Tippen: auswählen bzw. mit eigener Auswahl Befehl geben (wie Rechtsklick) · lange drücken: nur auswählen,
+   lange drücken und ziehen: Rahmenauswahl · doppelt tippen: alle gleichen im Bild · ein Finger wischen: Kamera
+   (mit Nachlauf) · zwei Finger: zoomen und schieben. Befehle laufen wie bei der Maus über issue(), der
+   Mehrspieler-Lockstep bleibt also unverändert. */
+const TOUCH = { last: -1e9, mode: null, id: 0, x0: 0, y0: 0, x: 0, y: 0, cx: 0, cy: 0, timer: 0, multi: false,
+  lastTapT: 0, lastTapId: null, vx: 0, vy: 0, moveT: 0, kin: null, pinch: null, idleN: -1 };
+function touchRecent(ms) { return performance.now() - TOUCH.last < (ms || 3000); }
+function tryFullscreen() {
+  const el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!IS_TOUCH || !f || document.fullscreenElement || document.webkitFullscreenElement) return;
+  try { const pr = f.call(el, { navigationUI: 'hide' }); if (pr && pr.catch) pr.catch(() => {}); } catch (e) { /* nicht unterstützt */ }
+}
+// Soll ein Tippen auf t bei bestehender eigener Auswahl own auswählen (true) oder einen Befehl geben (false)?
+function tapSelects(t, own) {
+  if (!t || t.owner !== G.human) return false; // Boden, Ressourcen, Wild, Feinde: Befehl
+  if (t.kind !== 'bld') return true;
+  // eigenes Gebäude: Dorfbewohner bauen weiter, reparieren, liefern ab oder bewirtschaften ein freies Feld
+  const vills = own.filter(e => e.kind === 'unit' && e.type === 'villager');
+  if (!vills.length) return true;
+  const d = BUILDINGS[t.type], farmer = d.farm && t.farmer && G.byId.get(t.farmer);
+  if (!t.built || t.hp < t.maxHp) return false;
+  if (d.farm && !(farmer && !farmer.dead)) return false;
+  if (d.drop && vills.some(v => v.carry && d.drop.includes(v.carryType))) return false;
+  return true;
+}
+function touchToggle(t) {
+  if (!t || t.owner !== G.human) return;
+  if (UI.selSet.has(t)) setSelection(UI.sel.filter(x => x !== t)); else setSelection(UI.sel.concat([t]));
+}
+function touchTap(x, y) {
+  if (UI.cmdMode === 'amove') { commandAt(x, y, true); UI.cmdMode = null; refreshCommands(); return; }
+  const t = pickAt(x, y), now = performance.now();
+  const dbl = t && now - TOUCH.lastTapT < 350 && TOUCH.lastTapId === t.id;
+  TOUCH.lastTapT = now; TOUCH.lastTapId = t ? t.id : null;
+  if (dbl && t.owner === G.human && (t.kind === 'unit' || t.kind === 'bld')) { selectSameOnScreen(t); return; }
+  if (TOUCH.multi) { touchToggle(t); return; }
+  const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
+  const canOrder = own.some(e => e.kind === 'unit' || (e.kind === 'bld' && BUILDINGS[e.type].trains));
+  if (canOrder && !tapSelects(t, own)) { commandAt(x, y, false); return; }
+  setSelection(t ? [t] : []);
+}
+function touchPlace(x, y, start) {
+  // Vorschau etwas oberhalb des Fingers, damit er sie nicht verdeckt
+  INPUT.mx = x; INPUT.my = y - 34;
+  updatePlacingPos();
+  const pl = UI.placing;
+  if (start) pl.lineStart = BUILDINGS[pl.type].line ? { x: pl.tx, y: pl.ty } : null;
+}
+function pinchInfo(ts) {
+  const a = ts[0], b = ts[1];
+  return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+}
+function setupTouch() {
+  if (IS_TOUCH) document.body.classList.add('touch');
+  window.addEventListener('touchstart', () => { TOUCH.last = performance.now(); INPUT.inside = false; }, { capture: true, passive: true });
+  window.addEventListener('touchmove', () => { TOUCH.last = performance.now(); }, { capture: true, passive: true });
+  // Seitenzoom des Browsers verhindern (iOS ignoriert user-scalable=no)
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (!running || paused) return;
+    hideTooltip();
+    const ts = e.touches;
+    clearTimeout(TOUCH.timer);
+    if (ts.length === 1) {
+      const t = ts[0];
+      Object.assign(TOUCH, { id: t.identifier, x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY, cx: cam.x, cy: cam.y, vx: 0, vy: 0, moveT: performance.now(), kin: null });
+      if (UI.placing) { TOUCH.mode = 'place'; touchPlace(t.clientX, t.clientY, true); return; }
+      TOUCH.mode = 'tap';
+      TOUCH.timer = setTimeout(() => {
+        if (TOUCH.mode !== 'tap') return;
+        TOUCH.mode = 'box'; INPUT.dragBox = { x0: TOUCH.x0, y0: TOUCH.y0, x1: TOUCH.x0, y1: TOUCH.y0 };
+        if (navigator.vibrate) navigator.vibrate(12);
+      }, 420);
+    } else if (ts.length === 2) {
+      if (TOUCH.mode === 'place' && UI.placing) UI.placing.lineStart = null;
+      INPUT.dragBox = null; TOUCH.kin = null;
+      const p = pinchInfo(ts);
+      TOUCH.mode = 'pinch';
+      TOUCH.pinch = { d: p.d, z: cam.zoom, px: (p.x - VW / 2) / cam.zoom + cam.x, py: (p.y - VH / 2) / cam.zoom + cam.y };
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!running || paused) return;
+    const ts = e.touches;
+    if (TOUCH.mode === 'pinch') {
+      if (ts.length < 2) return;
+      // Zoom um den Mittelpunkt der Finger; der Weltpunkt darunter bleibt unter den Fingern
+      const p = pinchInfo(ts), P0 = TOUCH.pinch;
+      const nz = clamp(P0.z * p.d / P0.d, 0.45, 2.2);
+      cam.zoom = nz; cam.x = P0.px - (p.x - VW / 2) / nz; cam.y = P0.py - (p.y - VH / 2) / nz; clampCam();
+      if (UI.placing) updatePlacingPos();
+      return;
+    }
+    const t = [...ts].find(q => q.identifier === TOUCH.id); if (!t) return;
+    const now = performance.now(), dtm = Math.max(1, now - TOUCH.moveT);
+    const dx = t.clientX - TOUCH.x, dy = t.clientY - TOUCH.y;
+    TOUCH.x = t.clientX; TOUCH.y = t.clientY; TOUCH.moveT = now;
+    if (TOUCH.mode === 'tap' && Math.hypot(t.clientX - TOUCH.x0, t.clientY - TOUCH.y0) > 10) { clearTimeout(TOUCH.timer); TOUCH.mode = 'pan'; }
+    if (TOUCH.mode === 'pan') {
+      cam.x = TOUCH.cx - (t.clientX - TOUCH.x0) / cam.zoom; cam.y = TOUCH.cy - (t.clientY - TOUCH.y0) / cam.zoom; clampCam();
+      TOUCH.vx = TOUCH.vx * 0.5 + dx / dtm * 500; TOUCH.vy = TOUCH.vy * 0.5 + dy / dtm * 500;
+    } else if (TOUCH.mode === 'box') {
+      INPUT.dragBox = { x0: Math.min(TOUCH.x0, t.clientX), y0: Math.min(TOUCH.y0, t.clientY), x1: Math.max(TOUCH.x0, t.clientX), y1: Math.max(TOUCH.y0, t.clientY) };
+    } else if (TOUCH.mode === 'place' && UI.placing) touchPlace(t.clientX, t.clientY, false);
+  }, { passive: false });
+
+  const touchEnd = e => {
+    e.preventDefault();
+    if (e.touches.length) { if (TOUCH.mode === 'pinch') TOUCH.mode = 'done'; return; } // erst reagieren, wenn alle Finger weg sind
+    clearTimeout(TOUCH.timer);
+    const m = TOUCH.mode; TOUCH.mode = null;
+    const box = INPUT.dragBox; INPUT.dragBox = null;
+    if (!running || paused || e.type === 'touchcancel') return;
+    if (m === 'tap') touchTap(TOUCH.x0, TOUCH.y0);
+    else if (m === 'box') {
+      if (box && (box.x1 - box.x0 > 14 || box.y1 - box.y0 > 14)) boxSelect(box.x0, box.y0, box.x1, box.y1, TOUCH.multi);
+      else { const t = pickAt(TOUCH.x0, TOUCH.y0); if (TOUCH.multi) touchToggle(t); else setSelection(t ? [t] : []); } // nur auswählen, kein Befehl
+    } else if (m === 'pan' && performance.now() - TOUCH.moveT < 60 && Math.hypot(TOUCH.vx, TOUCH.vy) > 120) {
+      TOUCH.kin = { vx: TOUCH.vx, vy: TOUCH.vy };
+    }
+  };
+  canvas.addEventListener('touchend', touchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', touchEnd, { passive: false });
+
+  // Minikarte antippen/ziehen
+  const mmTouch = e => { e.preventDefault(); if (running && e.touches.length) { TOUCH.kin = null; minimapJump(e.touches[0]); } };
+  mmCanvas.addEventListener('touchstart', mmTouch, { passive: false });
+  mmCanvas.addEventListener('touchmove', mmTouch, { passive: false });
+
+  // Knöpfe der Touch-Leiste
+  const on = (id, fn) => $(id).addEventListener('click', e => { e.stopPropagation(); if (running && !paused && G && !G.over) fn(); });
+  on('tbDesel', () => { if (TOUCH.multi) { TOUCH.multi = false; $('tbMulti').classList.remove('on'); } escapeAction(); });
+  on('tbMulti', () => { TOUCH.multi = !TOUCH.multi; $('tbMulti').classList.toggle('on', TOUCH.multi); });
+  on('tbIdle', selectIdleVillager);
+  on('tbTC', selectTownCenter);
+  on('tbArmy', () => {
+    const army = G.units.filter(u => !u.dead && u.owner === G.human && u.def.military);
+    if (army.length) setSelection(army); else notifyLocal('Keine Militäreinheiten.');
+  });
+  on('btnPlaceOk', () => commitPlacing(false));
+  on('btnPlaceNo', () => { cancelPlacing(); refreshCommands(); });
+}
+// pro Bild: Bauleiste ein-/ausblenden, Zähler der untätigen Dorfbewohner, Auflösung anpassen
+function touchFrame(dt) {
+  $('placeBar').classList.toggle('hidden', !UI.placing || paused || G.over);
+  const idle = G.units.reduce((n, u) => n + (!u.dead && u.owner === G.human && u.type === 'villager' && !u.order ? 1 : 0), 0);
+  if (idle !== TOUCH.idleN) { TOUCH.idleN = idle; $('tbIdle').innerHTML = 'Untätig' + (idle ? ' <b>' + idle + '</b>' : ''); }
+  perfTick(dt);
+}
+
 /* ============================ 13. START & HAUPTSCHLEIFE ============================ */
 let lastFrame = 0, acc = 0, fpsT = 0, fpsN = 0;
 function showMenu() {
@@ -4457,7 +4768,7 @@ function showMenu() {
   $('msgs').innerHTML = '';
   updateMenuButtons();
   $('startScreen').classList.remove('hidden');
-  $('topbar').classList.add('hidden'); $('bottom').classList.add('hidden');
+  $('topbar').classList.add('hidden'); $('bottom').classList.add('hidden'); $('touchBar').classList.add('hidden'); $('placeBar').classList.add('hidden');
 }
 function startGameFromMenu() {
   const sel = document.querySelector('#diffChoice .diff.sel'); const diff = sel ? sel.dataset.d : 'medium';
@@ -4485,7 +4796,7 @@ function beginSession() {
   G.onHit = t => {
     if (G.time - lastAlert < 12) return;
     // nur melden, wenn der Ort nicht ohnehin im Bild ist
-    const s = w2s(t.x, t.y); const onScreen = s.x > 0 && s.x < VW && s.y > 40 && s.y < VH - 184;
+    const s = w2s(t.x, t.y); const onScreen = s.x > 0 && s.x < VW && s.y > UI_TOP && s.y < VH - UI_BOT;
     lastAlert = G.time; UI.alerts.push({ x: t.x, y: t.y, t: G.time }); if (UI.alerts.length > 6) UI.alerts.shift();
     if (!onScreen) notify(t.kind === 'bld' ? BUILDINGS[t.type].name + ' wird angegriffen!' : 'Deine Einheiten werden angegriffen!', true);
   };
@@ -4496,7 +4807,9 @@ function beginSession() {
   G.mmDirty = true; mmT = 0; updateMinimapTiles();
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('pauseScreen').classList.add('hidden');
   $('saveScreen').classList.add('hidden');
-  $('topbar').classList.remove('hidden'); $('bottom').classList.remove('hidden');
+  $('topbar').classList.remove('hidden'); $('bottom').classList.remove('hidden'); $('touchBar').classList.remove('hidden');
+  TOUCH.multi = false; TOUCH.kin = null; $('tbMulti').classList.remove('on');
+  layoutUI(); tryFullscreen();
   $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[G.diff].name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
   $('diffLabel').title = $('diffLabel').textContent;
   paused = false; running = true; acc = 0;
@@ -4686,6 +4999,7 @@ function frame(t) {
   render();
   renderMinimap(dt);
   updateTopBar();
+  if (IS_TOUCH) touchFrame(dt);
   refreshPanel(false);
   notifyTick();
 }
@@ -4694,6 +5008,7 @@ function boot() {
   window.addEventListener('resize', resize);
   makeIcons();
   setupInput();
+  setupTouch();
   updateMenuButtons();
   // Beim Schließen des Tabs den aktuellen Stand sichern
   window.addEventListener('pagehide', () => { if (running && G && !G.over && !G.net) saveGame('auto', true); });

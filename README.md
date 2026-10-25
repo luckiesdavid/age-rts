@@ -101,7 +101,7 @@ Wie in Age of Empires IV gibt es vier Zeitalter. Für den Aufstieg baust du mit 
 |---|---|---|---|
 | I Dunkles Zeitalter | – | – (Start) | Dorfbewohner, Späher, Speerkämpfer, Kaserne, Wirtschaftsgebäude, Palisaden |
 | II Feudalzeit | 400 Nahrung, 200 Gold | **Marktkreuz** (alle Dorfbewohner sammeln 10 % schneller) oder **Kriegsschule** (Militär 25 % schneller ausgebildet) | Bogenschütze, Waffenknecht, Reiter, Ramme, Schießstand, Stall, Werkstatt, Schmiede, Markt, Turm, Steinmauer, weiteres Dorfzentrum |
-| III Burgzeit | 1200 Nahrung, 600 Gold | **Schatzkammer** (+1,5 Gold pro Sekunde, Lager für Gold/Stein) oder **Wehrburg** (sehr robust, schießt 4 Pfeile) | Armbrustschütze, Ritter, Katapult, Tribok, Bergfried, **Burg** mit Langbogenschütze und Ordensritter |
+| III Burgzeit | 1200 Nahrung, 600 Gold | **Schatzkammer** (+1,5 Gold pro Sekunde, Lager für Gold/Stein) oder **Wehrburg** (sehr robust, schießt 4 Pfeile, Besatzung bis 10, bildet Langbogenschützen, Ordensritter und Ballisten aus) | Armbrustschütze, Ritter, Katapult, Tribok, Bergfried, **Burg** mit Langbogenschütze und Ordensritter |
 | IV Imperialzeit | 2400 Nahrung, 1200 Gold | **Dom** (heilt eigene Einheiten in der Nähe) oder **Kriegsakademie** (Militär +15 % Schaden) | Handkanonier, dritte Stufe der Schmiede |
 
 ## Technologien
@@ -146,7 +146,7 @@ Das Bevölkerungslimit steigt mit jedem Haus um 10 (Dorfzentrum: 10, Maximum 200
 | Markt (II) | 150 Holz | Rohstoffhandel |
 | Turm (II) | 75 Holz, 125 Stein | schießt automatisch Pfeile (Reichweite 8) |
 | Bergfried (III) | 150 Holz, 650 Stein | Wehrturm, schießt 3 Pfeile (Reichweite 9), sehr robust, Besatzung bis 6 |
-| Burg (III) | 200 Holz, 800 Stein | wie in Age of Empires: schießt 4 Pfeile (Reichweite 9), Besatzung bis 12, bildet Langbogenschützen, Ordensritter und Triboks aus |
+| Burg (III) | 200 Holz, 800 Stein | wie in Age of Empires: schießt 4 Pfeile (Reichweite 9), Besatzung bis 12, bildet Langbogenschützen, Ordensritter, Onager, Ballisten und Triboks aus |
 | Palisade | 3 Holz je Segment | billige, schwache Holzmauer |
 | Palisadentor | 25 Holz | Tor in der Palisade |
 | Steinmauer (II) | 6 Stein je Segment | teure, starke Mauer |
@@ -173,6 +173,8 @@ Einheiten sind wie in AoE4 **leicht** oder **schwer** gepanzert. Schwere Einheit
 | Tribok | III | 400 Holz, 250 Gold | Reichweite 12, zerstört Gebäude und Burgen, greift keine Einheiten an |
 | Langbogenschütze | III (Burg) | 70 Holz, 40 Gold | Fernkampf mit Reichweite 7,5, stark gegen leichte Infanterie |
 | Ordensritter | III (Burg) | 120 Nahrung, 90 Gold | langsame, sehr robuste schwere Infanterie mit Zweihänder, schlägt auch Reiter |
+| Onager | III (Burg) | 200 Holz, 180 Gold | schweres Katapult, Reichweite 10 (min. 3), großer Flächenschaden gegen Gruppen und Gebäude |
+| Balliste | III (Burg, Wehrburg) | 150 Holz, 100 Gold | Riesenarmbrust, Reichweite 8,5, zerstört Belagerungswaffen, durchschlägt Rüstungen |
 | Handkanonier | IV | 120 Nahrung, 120 Gold | schwerer Fernkampf mit Schießpulver, hoher Schaden |
 
 **Besatzung:** Wähle Einheiten oder Dorfbewohner und klicke rechts auf deine Burg oder deinen Bergfried. Drinnen sind sie geschützt und heilen; je zwei Besatzer schießt das Gebäude einen Pfeil mehr. **Herauslassen (V)** schickt alle zum Sammelpunkt, wird das Gebäude zerstört, kommen sie von selbst heraus.

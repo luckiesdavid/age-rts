@@ -52,7 +52,7 @@ function randomCmd(w) {
     const tx = Math.floor(tc.x + (rand() - 0.5) * 16), ty = Math.floor(tc.y + (rand() - 0.5) * 16);
     const tiles = type === 'palisade' ? A.wallLine(tx, ty, tx + 4, ty).map(t => [t.x, t.y]) : [[tx, ty]];
     const k0 = Math.floor(rand() * vills.length);
-    return { c: 'build', ids: vills.slice(k0, k0 + (A.BUILDINGS[type].landmark ? 5 : 1)).map(u => u.id), type, tiles };
+    return { c: 'build', ids: vills.slice(k0, k0 + (A.BUILDINGS[type].landmark ? 5 : 1)).map(u => u.id), type, tiles, rot: rand() < 0.5 ? 1 : 0 };
   }
   if (r < 0.75 && blds.length) {
     const b = blds[Math.floor(rand() * blds.length)];
@@ -113,9 +113,10 @@ const hashes = worlds.map(w => { A.G = w.G; return A.stateHash(); });
 const summary = worlds.map(w => ({
   tick: w.G.tick, units: w.G.units.filter(u => !u.dead).length, buildings: w.G.buildings.filter(b => !b.dead).length,
   res: w.G.players.map(p => Object.values(p.res).map(Math.floor).join('/')), age: w.G.players.map(p => p.age),
-  techs: w.G.players.map(p => Object.keys(p.techs).length), stalls: w.stalls, desync: w.L.desync, over: w.G.over,
+  techs: w.G.players.map(p => Object.keys(p.techs).length), rotated: w.G.buildings.filter(b => b.rot === 1).length, stalls: w.stalls, desync: w.L.desync, over: w.G.over,
 }));
 console.log(JSON.stringify({ cmdsSent, hashes, summary }, null, 1));
-const ok = hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick;
+const ok = hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick
+  && summary[0].rotated > 0 && summary[0].rotated === summary[1].rotated;
 console.log(ok ? 'OK: beide Simulationen identisch' : 'FEHLER: Simulationen weichen ab');
 process.exit(ok ? 0 : 1);

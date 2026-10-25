@@ -625,7 +625,7 @@ body.touch .touchKeys { display: block; }
 
 /* ============================ 1. KONFIGURATION ============================ */
 // Softwareversion: bei JEDER Änderung hochzählen (wird im Hauptmenü und im Mehrspieler-Menü angezeigt)
-const GAME_VERSION = '2.2';
+const GAME_VERSION = '2.5';
 const N = 64;                 // Kartengröße in Kacheln
 const NN = N * N;
 const TW = 64, TH = 32;       // Kachelbreite/-höhe in Pixeln (Zoom 1)
@@ -695,6 +695,14 @@ const UNITS = {
     sight: 13, cost: { wood: 400, gold: 250 }, time: 35, pop: 4, cls: 'siege', radius: 0.42, splash: 1.0, bldOnly: true, age: 2,
     resist: { pierce: 0.4, melee: 1.2 }, projectile: 'stone', military: true, siege: true,
     desc: 'Riesige Wurfmaschine mit sehr großer Reichweite. Zerstört Gebäude, Burgen und Mauern, greift keine Einheiten an.' },
+  // Burgeinheiten (nur in der Burg, wie die Spezialeinheiten in Age of Empires II)
+  longbow: { name: 'Langbogenschütze', short: 'Langbogen', hp: 65, speed: 1.4, atk: 6, atkType: 'pierce', range: 7.5, cd: 1.7, sight: 9.5,
+    cost: { wood: 70, gold: 40 }, time: 17, pop: 1, cls: 'ranged', radius: 0.2, bonus: { light_inf: 6 }, age: 2,
+    projectile: 'arrow', military: true, desc: 'Burgeinheit. Bogenschütze mit sehr großer Reichweite, schießt fast so weit wie ein Turm. Stark gegen leichte Infanterie.' },
+  ordensritter: { name: 'Ordensritter', short: 'Ordensritter', hp: 240, speed: 1.05, atk: 16, atkType: 'melee', range: 0.55, cd: 1.6, sight: 7,
+    cost: { food: 120, gold: 90 }, time: 24, pop: 1, cls: 'inf', heavy: true, radius: 0.24, bonus: { cav: 8, siege: 10 }, age: 2,
+    resist: { melee: 0.6, pierce: 0.55 }, military: true,
+    desc: 'Burgeinheit. Langsame, schwer gepanzerte Elite-Infanterie mit Zweihänder. Hält enorm viel aus und schlägt auch Reiter.' },
   deer: { name: 'Hirsch', hp: 20, speed: 1.3, atk: 0, atkType: 'melee', range: 0, cd: 9, sight: 4, cost: {}, time: 0, pop: 0,
     cls: 'deer', radius: 0.25, gaia: true, desc: 'Wild. Dorfbewohner können es jagen (Nahrung).' },
 };
@@ -733,8 +741,12 @@ const BUILDINGS = {
     desc: 'Tauscht Nahrung, Holz und Stein gegen Gold. Jeder Handel verschiebt den Preis.' },
   tower: { name: 'Turm', w: 2, h: 2, hp: 1400, cost: { wood: 75, stone: 125 }, time: 35, attack: { dmg: 10, range: 8, cd: 1.5 }, age: 1,
     resist: { melee: 0.08, pierce: 0.02, siege: 1 }, desc: 'Schießt automatisch Pfeile auf Feinde in Reichweite.' },
-  keep: { name: 'Bergfried', w: 3, h: 3, hp: 4500, cost: { wood: 150, stone: 650 }, time: 110, attack: { dmg: 11, range: 9, cd: 1.3, n: 3 }, age: 2,
-    resist: { melee: 0.05, pierce: 0.015, siege: 0.85 }, desc: 'Mächtige Burg. Schießt drei Pfeile gleichzeitig und hält lange stand.' },
+  keep: { name: 'Bergfried', w: 3, h: 3, hp: 4500, cost: { wood: 150, stone: 650 }, time: 110, attack: { dmg: 11, range: 9, cd: 1.3, n: 3 }, age: 2, garrison: 6,
+    resist: { melee: 0.05, pierce: 0.015, siege: 0.85 }, desc: 'Wehrturm. Schießt drei Pfeile gleichzeitig und hält lange stand. Bis zu 6 Einheiten finden darin Schutz.' },
+  // Burg wie in Age of Empires: Besatzung (garrison) schießt mit und heilt, bildet Burgeinheiten und Triboks aus
+  castle: { name: 'Burg', w: 4, h: 4, hp: 5500, cost: { wood: 200, stone: 800 }, time: 160, attack: { dmg: 11, range: 9, cd: 1.3, n: 4 }, age: 2, garrison: 12,
+    trains: ['longbow', 'ordensritter', 'trebuchet'], techs: ['hoardings', 'firearrows'], resist: { melee: 0.05, pierce: 0.015, siege: 0.8 },
+    desc: 'Burg wie in Age of Empires. Schießt vier Pfeile, bis zu 12 Einheiten finden darin Schutz (je zwei ein Pfeil mehr, Verwundete heilen). Bildet Langbogenschützen, Ordensritter und Triboks aus.' },
   palisade: { name: 'Palisade', w: 1, h: 1, hp: 300, cost: { wood: 3 }, time: 3, wall: true, line: true, age: 0,
     resist: { melee: 0.3, pierce: 0.02, siege: 1.2 }, desc: 'Billige Holzmauer. Ziehen, um eine Linie zu bauen. Kosten pro Segment.' },
   pgate: { name: 'Palisadentor', w: 1, h: 1, hp: 450, cost: { wood: 25 }, time: 8, wall: true, gate: true, age: 0,
@@ -759,7 +771,7 @@ const BUILDINGS = {
 };
 for (const k in BUILDINGS) if (BUILDINGS[k].landmark) BUILDINGS[k].age = BUILDINGS[k].landmark - 1;
 const LANDMARKS = Object.keys(BUILDINGS).filter(k => BUILDINGS[k].landmark);
-const VILLAGER_BUILDS = ['house', 'mill', 'lumber', 'mining', 'farm', 'barracks', 'range', 'stable', 'siege', 'blacksmith', 'market', 'tower', 'keep',
+const VILLAGER_BUILDS = ['house', 'mill', 'lumber', 'mining', 'farm', 'barracks', 'range', 'stable', 'siege', 'blacksmith', 'market', 'tower', 'keep', 'castle',
   'palisade', 'pgate', 'wall', 'sgate', 'tc', ...LANDMARKS];
 
 // Technologien: at = Gebäude, age = ab Zeitalter, req = Voraussetzung, eff = Wirkung
@@ -778,6 +790,10 @@ const TECHS = {
     desc: 'Holz wird weitere 15 % schneller gesammelt.' },
   mine1: { name: 'Spitzhacke', at: 'mining', age: 1, cost: { food: 75, wood: 100 }, time: 25, eff: { gather: { gold: 0.15, stone: 0.15 } }, icon: 'pick',
     desc: 'Gold und Stein werden 15 % schneller abgebaut.' },
+  hoardings: { name: 'Wehrgänge', at: 'castle', age: 2, cost: { wood: 300, stone: 200 }, time: 50, eff: { fortHp: 0.25 }, icon: 'tower',
+    desc: 'Türme, Bergfriede, Burgen und Dorfzentren erhalten +25 % Lebenspunkte.' },
+  firearrows: { name: 'Brandpfeile', at: 'castle', age: 2, cost: { food: 300, gold: 200 }, time: 50, eff: { towerAtk: 3 }, icon: 'fire',
+    desc: 'Türme, Bergfriede, Burgen und Dorfzentren: +3 Schaden je Pfeil.' },
   mine2: { name: 'Schachtbau', at: 'mining', age: 2, req: 'mine1', cost: { wood: 250, gold: 150 }, time: 45, eff: { gather: { gold: 0.15, stone: 0.15 } }, icon: 'pick',
     desc: 'Gold und Stein werden weitere 15 % schneller abgebaut.' },
 };
@@ -1173,7 +1189,8 @@ function spawnUnit(type, owner, x, y) {
   }
   return u;
 }
-function alive(e) { return e && !e.dead; }
+// inside = Einheit sitzt als Besatzung in einem Gebäude (b.gar): nicht auf der Karte, nicht angreifbar
+function alive(e) { return e && !e.dead && !e.inside; }
 function isEnemy(a, b) { return a.owner !== b.owner && a.owner < 2 && b.owner < 2; }
 
 /* ---------- Wege anfordern / folgen ---------- */
@@ -1331,6 +1348,39 @@ function orderBuild(u, b) {
   if (u.type !== 'villager' || !alive(b)) return;
   clearOrder(u);
   u.order = { t: 'build', b };
+}
+// alle lebenden Einheiten einschließlich der Besatzung von Gebäuden
+function forEachUnit(fn) {
+  for (const u of G.units) if (!u.dead && !u.inside) fn(u);
+  for (const b of G.buildings) if (!b.dead && b.gar) for (const u of b.gar) fn(u);
+}
+// Besatzung (wie Age of Empires): Einheiten gehen in Burg oder Bergfried, sind dort geschützt und heilen
+function canGarrison(u, b) { const d = BUILDINGS[b.type]; return !!d.garrison && b.built && b.owner === u.owner && !u.def.siege && !u.def.gaia; }
+function orderGarrison(u, b) { clearOrder(u); u.order = { t: 'garrison', b }; }
+function updateGarrison(u, o, dt) {
+  const b = o.b;
+  if (!alive(b) || !canGarrison(u, b)) { clearOrder(u); return; }
+  if (distToRect(u.x, u.y, b.tx, b.ty, b.w, b.h) <= 0.9) { enterBuilding(u, b); return; }
+  if (approachRect(u, b, b.tx, b.ty, b.w, b.h, 0.6, dt, 'gFail') === 'fail') { u.gFail = 0; clearOrder(u); }
+}
+function enterBuilding(u, b) {
+  clearOrder(u); leaveWork(u);
+  if (b.gar.length >= BUILDINGS[b.type].garrison) { cmdMsg(u.owner, BUILDINGS[b.type].name + ' ist voll besetzt.'); return; }
+  u.inside = b; u.lastAttacker = null; u.target = null; u.guard = null;
+  b.gar.push(u); G.byId.delete(u.id);
+  G.garDirty = true; // aus G.units entfernt wird am Ende des Simulationsschritts
+}
+// Alle Besatzer herauslassen (auch wenn das Gebäude zerstört wird)
+function ejectAll(b, toRally) {
+  const list = b.gar; if (!list || !list.length) return;
+  b.gar = [];
+  for (const u of list) {
+    const sp = spawnPointFor(b, u.type) || { x: b.x, y: b.ty + b.h + 0.5 };
+    u.inside = null; u.x = sp.x; u.y = sp.y; u.px = u.x; u.py = u.y; u.stuckT = 0; u.lastX = u.x; u.lastY = u.y;
+    if (u.offList) { u.offList = false; G.units.push(u); }
+    G.byId.set(u.id, u);
+    if (toRally) sendToRally(u, b);
+  }
 }
 function findFreeFarm(owner, x, y) {
   let best = null, bd = 1e9;
@@ -1743,6 +1793,7 @@ function updateUnit(u, dt) {
 
   if (o && o.t === 'gather') { if (u.lastAttacker && combatResponseVillager(u)) {} updateGather(u, o, dt); u.lastGatherSub = o.sub; return; }
   if (o && o.t === 'build') { updateBuild(u, o, dt); return; }
+  if (o && o.t === 'garrison') { updateGarrison(u, o, dt); return; }
   if (o && o.t === 'attack') {
     if (!canTarget(u, o.target)) { u.order = null; u.target = null; u.aggr = false; stopMoving(u); }
     else { engage(u, o.target, dt, true); return; }
@@ -1879,10 +1930,12 @@ function placeBuilding(type, tx, ty, owner, instant, rot) {
   if (d.gate) { const old = G.bld[ty * N + tx]; if (old) removeBuildingSilently(old); }
   const b = {
     id: G.nextId++, kind: 'bld', type, owner, tx, ty, w: d.w, h: d.h, x: tx + d.w / 2, y: ty + d.h / 2,
-    hp: instant ? d.hp : Math.max(1, d.hp * 0.05), maxHp: d.hp, built: !!instant, progress: instant ? 1 : 0,
+    hp: 0, maxHp: d.hp * (d.attack && owner < 2 ? G.players[owner].fortHp || 1 : 1), built: !!instant, progress: instant ? 1 : 0,
     builders: 0, buildersNow: 0, queue: [], prodT: 0, rally: null, cd: 0, farmer: 0, dead: false, lastHit: -99,
     seed: (tx * 31 + ty * 17) % 97, rot: rot && canRotate(type) ? 1 : 0,
   };
+  b.hp = instant ? b.maxHp : Math.max(1, b.maxHp * 0.05);
+  if (d.garrison) b.gar = [];
   G.buildings.push(b); G.byId.set(b.id, b);
   for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) { G.bld[y * N + x] = b; updateTile(y * N + x); }
   if (instant) completeBuilding(b, true);
@@ -1918,6 +1971,7 @@ function destroyBuilding(b) {
   if (b.dead) return;
   const d = BUILDINGS[b.type];
   removeBuildingSilently(b);
+  ejectAll(b, false); // Besatzung überlebt und kommt heraus
   if (b.built && d.pop && b.owner < 2) G.players[b.owner].popCap -= d.pop;
   // Warteschlange erstatten
   if (b.owner < 2) for (const q of b.queue) { refund(G.players[b.owner], qCost(q), 1); if (q.tech) delete G.players[b.owner].researching[q.tech]; }
@@ -1975,8 +2029,11 @@ function cancelQueue(b, idx) {
 function completeTech(owner, id) {
   const p = G.players[owner]; delete p.researching[id]; p.techs[id] = true;
   const e = TECHS[id].eff;
-  if (e.villHp) for (const u of G.units) if (!u.dead && u.owner === owner && u.type === 'villager') { u.maxHp += e.villHp; u.hp += e.villHp; }
+  if (e.villHp) forEachUnit(u => { if (u.owner === owner && u.type === 'villager') { u.maxHp += e.villHp; u.hp += e.villHp; } });
   recalcPlayer(owner);
+  if (e.fortHp) for (const b of G.buildings) if (!b.dead && b.owner === owner && BUILDINGS[b.type].attack) {
+    const m = BUILDINGS[b.type].hp * p.fortHp; b.hp += m - b.maxHp; b.maxHp = m;
+  }
   if (owner === G.human) notify(TECHS[id].name + ' erforscht.');
 }
 // Boni aus Technologien und stehenden Wahrzeichen neu berechnen (selten: nach Forschung, Bau oder Verlust eines Wahrzeichens)
@@ -1984,6 +2041,7 @@ function recalcPlayer(owner) {
   const p = G.players[owner];
   p.gather = { food: 1, wood: 1, gold: 1, stone: 1 }; p.carry = CARRY; p.villSpeed = 1; p.villHp = 0;
   p.atkUp = { melee: 0, pierce: 0 }; p.armUp = { melee: 0, pierce: 0 }; p.milProd = 1; p.atkMult = 1; p.trickle = 0; p.heal = 0;
+  p.fortHp = 1; p.towerAtk = 0;
   const apply = e => {
     if (!e) return;
     for (const k in e.gather || {}) p.gather[k] += e.gather[k];
@@ -1997,11 +2055,13 @@ function recalcPlayer(owner) {
     if (e.atkMult) p.atkMult += e.atkMult;
     if (e.trickle) p.trickle += e.trickle;
     if (e.heal) p.heal += e.heal;
+    if (e.fortHp) p.fortHp += e.fortHp;
+    if (e.towerAtk) p.towerAtk += e.towerAtk;
   };
   for (const id in p.techs) apply(TECHS[id].eff);
   for (const b of G.buildings) if (!b.dead && b.built && b.owner === owner && BUILDINGS[b.type].landmark) apply(BUILDINGS[b.type].eff);
   const spd = p.villSpeed > 1 ? UNITS.villager.speed * p.villSpeed : 0;
-  for (const u of G.units) if (!u.dead && u.owner === owner && u.type === 'villager') { if (spd) u.spd = spd; else delete u.spd; }
+  forEachUnit(u => { if (u.owner === owner && u.type === 'villager') { if (spd) u.spd = spd; else delete u.spd; } });
 }
 // Darf der Spieler dieses Gebäude jetzt bauen? null = ja, sonst Grund
 function buildBlock(p, type) {
@@ -2068,11 +2128,11 @@ function updateBuilding(b, dt) {
       });
       if (tgt) {
         b.cd = d.attack.cd;
-        const n = d.attack.n || 1;
-        for (let k = 0; k < n; k++) {
-          const src = { atk: d.attack.dmg, atkType: 'pierce', bonus: {} };
-          spawnProjectile('arrow', b, b.x - 0.2 + (n > 1 ? k * 0.4 / (n - 1) : 0), b.y - 0.2, b.type === 'tower' || b.type === 'keep' ? 3.2 : 2.4, tgt, tgt.x, tgt.y, src);
-        }
+        // Besatzung: je zwei Einheiten ein Pfeil mehr; Brandpfeile erhöhen den Schaden
+        const n = (d.attack.n || 1) + (b.gar ? b.gar.length >> 1 : 0);
+        const src = { atk: d.attack.dmg + (b.owner < 2 ? G.players[b.owner].towerAtk || 0 : 0), atkType: 'pierce', bonus: {} };
+        const z = b.type === 'castle' ? 3.6 : b.type === 'tower' || b.type === 'keep' ? 3.2 : 2.4, sp = Math.min(b.w, b.h) * 0.25;
+        for (let k = 0; k < n; k++) spawnProjectile('arrow', b, b.x - sp + (n > 1 ? k * 2 * sp / (n - 1) : 0), b.y - sp, z, tgt, tgt.x, tgt.y, src);
       } else b.cd = 0.3;
     }
   }
@@ -2245,13 +2305,15 @@ function simStep(dt) {
   processPathQueue();
   for (const b of G.buildings) if (!b.dead) updateBuilding(b, dt);
   const us = G.units;
-  for (let k = 0; k < us.length; k++) { const u = us[k]; if (!u.dead) { updateUnit(u, dt); checkStuck(u, dt); } }
+  for (let k = 0; k < us.length; k++) { const u = us[k]; if (!u.dead && !u.inside) { updateUnit(u, dt); checkStuck(u, dt); } }
   separate(dt);
   updateProjectiles(dt);
   updateEffects(dt);
   for (const ai of G.ais) aiUpdate(ai, dt);
   for (const p of G.players) if (p.trickle) p.res.gold += p.trickle * dt;
   if (G.tick % 30 === 0) landmarkHeal();
+  // Einheiten, die in diesem Schritt in ein Gebäude gegangen sind, verlassen die Einheitenliste
+  if (G.garDirty) { G.units = G.units.filter(u => { if (u.inside) { u.offList = true; return false; } return true; }); G.garDirty = false; }
   // Aufräumen
   if (G.tick % 15 === 0) {
     if (G.unitsDirty) { G.units = G.units.filter(u => !u.dead); G.unitsDirty = false; }
@@ -2270,6 +2332,8 @@ function landmarkHeal() {
     const e = BUILDINGS[b.type].eff; if (!e || !e.heal) continue;
     queryUnits(b.x, b.y, 9, u => { if (!u.dead && u.owner === b.owner && u.hp < u.maxHp && !u.def.siege) u.hp = Math.min(u.maxHp, u.hp + e.heal); });
   }
+  // Besatzung heilt in Burg und Bergfried
+  for (const b of G.buildings) if (!b.dead && b.gar) for (const u of b.gar) if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + 2);
 }
 function checkVictory() {
   // Wahrzeichen-Sieg (wie AoE4): Wer alle Wahrzeichen verliert (das erste Dorfzentrum zählt mit), hat verloren.
@@ -2315,13 +2379,16 @@ function execCmd(p, c) {
   } else if (c.c === 'mkt') {
     if (!G.buildings.some(b => !b.dead && b.built && b.owner === p && BUILDINGS[b.type].market)) return;
     const err = marketTrade(G.players[p], c.r, !!c.buy); if (err) cmdMsg(p, err);
+  } else if (c.c === 'ungar') {
+    const b = cmdEnts(p, [c.id], 'bld')[0];
+    if (b && b.gar) ejectAll(b, true);
   } else if (c.c === 'stop') { for (const u of cmdEnts(p, c.ids, 'unit')) clearOrder(u); }
   else if (c.c === 'del') { for (const e of cmdEnts(p, c.ids)) { if (e.kind === 'unit') killUnit(e); else deleteOwnBuilding(e); } }
 }
 // Rechtsklick: bewegen, angreifen, sammeln, bauen/reparieren, abgeben oder Sammelpunkt setzen
 function execAct(p, c) {
   const own = cmdEnts(p, c.ids);
-  const units = own.filter(e => e.kind === 'unit');
+  let units = own.filter(e => e.kind === 'unit');
   const tg = c.t ? G.byId.get(c.t) : null;
   const target = alive(tg) ? tg : null;
   const x = +c.x, y = +c.y;
@@ -2341,6 +2408,14 @@ function execAct(p, c) {
     const cant = units.filter(u => !(u.order && u.order.t === 'attack'));
     if (cant.length) groupMove(cant, target.x, target.y, false);
     return;
+  }
+  // Eigene Burg / eigener Bergfried: hineingehen (Dorfbewohner reparieren zuerst, falls beschädigt)
+  if (target && target.kind === 'bld' && target.owner === p && target.built && BUILDINGS[target.type].garrison) {
+    const repair = target.hp < target.maxHp;
+    const into = units.filter(u => canGarrison(u, target) && !(repair && u.type === 'villager'));
+    for (const u of into) orderGarrison(u, target);
+    units = units.filter(u => into.indexOf(u) < 0);
+    if (!units.length) return;
   }
   const vills = units.filter(u => u.type === 'villager');
   const others = units.filter(u => u.type !== 'villager');
@@ -2441,7 +2516,7 @@ function stateHash() {
   const mixN = v => { HASH_F64[0] = v; h = Math.imul(h ^ HASH_U32[0], 16777619); h = Math.imul(h ^ HASH_U32[1], 16777619); };
   mixN(G.tick); mixN(G.nextId);
   for (const u of G.units) if (!u.dead) { mixN(u.id); mixN(u.x); mixN(u.y); mixN(u.hp); }
-  for (const b of G.buildings) if (!b.dead) { mixN(b.id); mixN(b.hp); mixN(b.progress); mixN(b.queue.length); mixN(b.rot | 0); }
+  for (const b of G.buildings) if (!b.dead) { mixN(b.id); mixN(b.hp); mixN(b.progress); mixN(b.queue.length); mixN(b.rot | 0); if (b.gar) mixN(b.gar.length); }
   for (const r of G.resources) if (!r.dead) mixN(r.amount);
   for (const p of G.players) { for (const k of RES_TYPES) mixN(p.res[k]); mixN(p.age); }
   return h >>> 0;
@@ -2562,6 +2637,7 @@ function aiEconomy(ai) {
     if (p.res.gold >= ai.saving.gold) ratio.gold *= 0.3;
   }
   if (p.age >= 2) { ratio.gold += 0.06; ratio.wood -= 0.04; }
+  if (p.age >= 2 && ai.diff !== 'easy' && !aiBuildingCount(ai, 'castle')) { ratio.stone += 0.07; ratio.food -= 0.04; } // für die Burg
   // Vorräte berücksichtigen: Überschuss senkt, Mangel erhöht den Anteil
   for (const k of RES_TYPES) {
     if (ratio[k] <= 0) continue;
@@ -2682,6 +2758,7 @@ function aiResearch(ai) {
   }
   const list = AI_ECO_TECHS.filter(id => ai.d.smith > 0 || TECHS[id].age <= 1);
   for (let k = 1; k <= ai.d.smith; k++) for (const l of ['melee', 'ranged', 'parmor', 'marmor']) list.push(l + k);
+  if (ai.d.smith >= 2) list.push('firearrows', 'hoardings');
   for (const id of list) {
     const t = TECHS[id];
     if (techBlock(p, id)) continue;
@@ -2717,6 +2794,7 @@ function aiBuildings(ai) {
   if (ai.d.smith && nv >= 14) want.blacksmith = 1;
   if (ai.diff !== 'easy' && nv >= 20 && t >= 420) want.market = 1;
   if (ai.diff === 'hard' && p.age >= 2 && p.res.stone >= 650) want.keep = 1;
+  if (ai.diff !== 'easy' && p.age >= 2 && p.res.stone >= BUILDINGS.castle.cost.stone) want.castle = 1;
   for (const type in want) {
     if (type === 'siege' && !ai.d.siege) continue;
     if (BUILDINGS[type].age > p.age) continue;
@@ -2814,7 +2892,8 @@ function aiMilitary(ai) {
   }
   const w = { spear: 1 + e.cav * 0.35, maa: 1 + e.ranged * 0.25 + e.lightInf * 0.2,
     archer: 1 + e.lightInf * 0.35, crossbow: 0.7 + e.heavy * 0.45, handcannon: 0.9 + e.heavy * 0.2,
-    horseman: 0.8 + e.ranged * 0.35 + e.siege * 0.6, knight: 1 + e.ranged * 0.2 + e.lightInf * 0.15 - Math.min(0.6, e.spear * 0.1) };
+    horseman: 0.8 + e.ranged * 0.35 + e.siege * 0.6, knight: 1 + e.ranged * 0.2 + e.lightInf * 0.15 - Math.min(0.6, e.spear * 0.1),
+    longbow: 0.9 + e.lightInf * 0.3 + e.siege * 0.2, ordensritter: 0.7 + e.cav * 0.25 + e.lightInf * 0.15 };
   // Wirtschaft hat Vorrang, solange wenig Dorfbewohner; beim Sparen fürs Zeitalter Nahrung und Gold zurückhalten
   const ecoFirst = vills < Math.min(ai.d.vills, 12) && t < 300;
   const reserve = { food: ecoFirst ? 50 : 0, wood: 0, gold: 0, stone: 0 };
@@ -2847,7 +2926,7 @@ function aiMilitary(ai) {
     }
     return { ut: best, v: bv };
   };
-  const blds = aiBlds(ai).filter(b => b.type === 'barracks' || b.type === 'range' || b.type === 'stable');
+  const blds = aiBlds(ai).filter(b => b.type === 'barracks' || b.type === 'range' || b.type === 'stable' || b.type === 'castle');
   const picks = blds.map(b => ({ b, ...pick(b) })).filter(x => x.ut).sort((a, b) => a.v - b.v);
   for (const { b, ut } of picks) {
     if (b.queue.length >= ai.d.buildQueue || !canPay(UNITS[ut].cost)) continue;
@@ -2876,6 +2955,7 @@ function aiDefense(ai) {
   }
   if (n === 0) {
     ai.threat = null;
+    for (const b of myBlds) if (b.gar && b.gar.length) ejectAll(b, false); // Gefahr vorbei: Besatzung zurück an die Arbeit
     // Verteidiger zurückziehen
     for (const id of ai.defenders) { const u = G.byId.get(id); if (alive(u) && !u.order && !u.target) ai.defenders.delete(id); if (!alive(u)) ai.defenders.delete(id); }
     return;
@@ -2899,7 +2979,10 @@ function aiDefense(ai) {
   }
   // Dorfbewohner in unmittelbarer Gefahr: zum Dorfzentrum fliehen, wenn keine Verteidiger
   if (home.length < strength && tc) {
+    const forts = myBlds.filter(b => b.gar && b.built);
     for (const u of aiUnits(ai, v => v.type === 'villager' && v.lastAttacker && alive(v.lastAttacker) && v.lastAttacker.def.military)) {
+      const f = forts.find(b => b.gar.length < BUILDINGS[b.type].garrison && distToRect(u.x, u.y, b.tx, b.ty, b.w, b.h) < 12);
+      if (f) { orderGarrison(u, f); u.lastAttacker = null; continue; }
       if (dist(u.x, u.y, tc.x, tc.y) > 4) { orderMove(u, tc.x + (rnd() - 0.5) * 5, tc.y + (rnd() - 0.5) * 5); u.lastAttacker = null; }
     }
   }
@@ -3202,6 +3285,47 @@ function chimney(c, x, y, z, h) {
   box(c, x - 0.07, y - 0.07, x + 0.07, y + 0.07, z, z + h, '#9a8f80', { top: '#3a322c' });
   box(c, x - 0.09, y - 0.09, x + 0.09, y + 0.09, z + h, z + h + 1.5, '#a89e90', { top: '#2a2420' });
 }
+// Runder Turm (Zylinder) um (x, y) mit Radius r in Kacheln; Zinnenkranz oder Kegeldach (opt.cone = Höhe)
+function roundTower(c, x, y, r, z0, z1, rnd, opt) {
+  opt = opt || {};
+  const rx = r * HALF_W * Math.SQRT2, ry = r * HALF_H * Math.SQRT2;
+  const b0 = P(x, y, z0), b1 = P(x, y, z1), cx = b0[0];
+  // Licht von links: Helligkeit über die Breite (bei gespiegelten Sprites umgekehrt)
+  const g = c.createLinearGradient(cx - rx, 0, cx + rx, 0);
+  for (const [t, k] of [[0, 0.78], [0.3, 1.02], [0.65, 0.78], [1, 0.56]]) g.addColorStop(SPR_MIR ? 1 - t : t, shade(STONE, k));
+  c.beginPath(); c.moveTo(cx - rx, b1[1]); c.lineTo(cx - rx, b0[1]); c.ellipse(cx, b0[1], rx, ry, 0, Math.PI, 0, true);
+  c.lineTo(cx + rx, b1[1]); c.ellipse(cx, b1[1], rx, ry, 0, 0, Math.PI, false); c.closePath();
+  c.fillStyle = g; c.fill(); c.strokeStyle = 'rgba(30,20,10,.45)'; c.lineWidth = 0.7; c.stroke();
+  // Steinlagen und Fugen
+  const rows = Math.max(2, Math.round((z1 - z0) / 5));
+  c.strokeStyle = 'rgba(50,44,36,.38)'; c.lineWidth = 0.55; c.beginPath();
+  for (let k = 1; k < rows; k++) { const yy = b0[1] - (z1 - z0) * k / rows; c.moveTo(cx + rx, yy); c.ellipse(cx, yy, rx, ry, 0, 0, Math.PI, false); }
+  for (let k = 0; k < rows; k++) for (let j = 0; j < 4; j++) {
+    const a = (j + (k % 2) * 0.5 + 0.25) / 4 * Math.PI, px = cx + Math.cos(a) * rx, py = Math.sin(a) * ry;
+    c.moveTo(px, b0[1] - (z1 - z0) * k / rows + py); c.lineTo(px, b0[1] - (z1 - z0) * (k + 1) / rows + py);
+  }
+  c.stroke();
+  // Schießscharten
+  for (const v of opt.slits || [0.55]) { const yy = b0[1] - (z1 - z0) * v + ry * 0.9; c.fillStyle = '#1e1a16'; c.fillRect(cx - rx * 0.12 - 0.6, yy - 3.5, 1.4, 7); }
+  if (opt.cone) {
+    const a = P(x, y, z1 + opt.cone), cr = rx * 1.18, crY = ry * 1.18;
+    const gr = c.createLinearGradient(cx - cr, 0, cx + cr, 0);
+    for (const [t, k] of [[0, 0.95], [0.35, 1.15], [1, 0.62]]) gr.addColorStop(SPR_MIR ? 1 - t : t, shade(opt.col, k));
+    c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(cx - cr, b1[1] - 1); c.ellipse(cx, b1[1] - 1, cr, crY, 0, Math.PI, 0, true); c.closePath();
+    c.fillStyle = gr; c.fill(); c.strokeStyle = 'rgba(30,20,10,.55)'; c.lineWidth = 0.7; c.stroke();
+    c.strokeStyle = 'rgba(30,20,10,.25)'; c.lineWidth = 0.5; c.beginPath();
+    for (let k = 1; k < 5; k++) { const ex = cx + Math.cos(Math.PI * k / 5) * cr; c.moveTo(a[0], a[1]); c.lineTo(ex, b1[1] - 1 + Math.sin(Math.PI * k / 5) * crY); }
+    c.stroke();
+    c.fillStyle = '#d9b75a'; c.beginPath(); c.arc(a[0], a[1], 1.2, 0, Math.PI * 2); c.fill();
+    return;
+  }
+  // Wehrplattform und Zinnen (von hinten nach vorn)
+  c.fillStyle = shade(STONE, 0.7); c.beginPath(); c.ellipse(cx, b1[1], rx, ry, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+  const n = opt.merlons || 8, ms = Math.min(0.09, r * 0.22), mer = [];
+  for (let k = 0; k < n; k++) { const an = (k + 0.5) / n * Math.PI * 2; mer.push([x + Math.cos(an) * (r - ms), y + Math.sin(an) * (r - ms)]); }
+  mer.sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]));
+  for (const [mx, my] of mer) box(c, mx - ms, my - ms, mx + ms, my + ms, z1, z1 + 5, STONE);
+}
 // Erdfleck unter Gebäuden mit unregelmäßigem Rand
 function ground(c, w, h, col, rnd) {
   const pts = [], n = 6;
@@ -3233,7 +3357,7 @@ function logPile(c, x, y, n, rnd) { // Baumstämme, Stirnseiten zeigen nach link
 /* ---------- Gebäude-Grafiken ---------- */
 // Höhe (für Schatten) und Schornstein (für Rauch) je Gebäudetyp
 const BLD_HEIGHT = { tc: 78, house: 34, lumber: 26, mining: 26, mill: 46, farm: 0, barracks: 36, range: 34, stable: 34, siege: 36, tower: 92,
-  blacksmith: 34, market: 30, keep: 96, lm_market: 52, lm_school: 50, lm_treasury: 56, lm_fort: 76, lm_cathedral: 104, lm_academy: 70 };
+  blacksmith: 34, market: 30, keep: 96, castle: 100, lm_market: 52, lm_school: 50, lm_treasury: 56, lm_fort: 76, lm_cathedral: 104, lm_academy: 70 };
 const CHIMNEYS = { house: [0.7, 0.75, 36], tc: [3.0, 1.0, 55], siege: [0.8, 0.6, 38], blacksmith: [0.6, 0.6, 41] };
 
 function drawBuildingShape(c, type, owner, w, h, opt) {
@@ -3459,6 +3583,53 @@ function drawBuildingShape(c, type, owner, w, h, opt) {
       for (let k = 0; k < 5; k++) { box(c, 0.55 + k * 0.4, 2.23, 0.77 + k * 0.4, 2.45, 72, 78, STONE); box(c, 2.23, 0.55 + k * 0.4, 2.45, 0.77 + k * 0.4, 72, 78, STONE); }
       pyramidRoof(c, 0.85, 0.85, 2.15, 2.15, 73, 20, rc);
       flag(c, 1.5, 1.5, 93, 14, pc);
+      break;
+    }
+    case 'castle': { // Burg wie in Age of Empires II: Ringmauer, runde Ecktürme, Torhaus, hoher Bergfried mit Ecktürmchen
+      ground(c, w, h, '#8f8878', rnd);
+      const WH = 24, TT = 40, TOP = '#8a8376';
+      // Zinnen entlang einer Mauerkante
+      const mer = (x0, y0, x1, y1, z, alongX) => {
+        const len = alongX ? x1 - x0 : y1 - y0, n = Math.max(2, Math.round(len / 0.3));
+        for (let k = 0; k < n; k++) { const a = k / n, b2 = a + 0.55 / n; if (alongX) box(c, x0 + len * a, y0, x0 + len * b2, y1, z, z + 5, STONE); else box(c, x0, y0 + len * a, x1, y0 + len * b2, z, z + 5, STONE); }
+      };
+      // hintere Mauern (Innenseiten zum Hof sichtbar), dann der hintere Eckturm
+      solid(c, 0.48, 0.6, 0.76, 3.4, 0, WH, 'stone', rnd, { top: TOP }); mer(0.48, 0.6, 0.6, 3.4, WH, false);
+      solid(c, 0.6, 0.48, 3.4, 0.76, 0, WH, 'stone', rnd, { top: TOP }); mer(0.6, 0.48, 3.4, 0.6, WH, true);
+      roundTower(c, 0.6, 0.6, 0.46, 0, TT, rnd);
+      // Hof
+      poly(c, [P(0.76, 0.76, 0), P(3.27, 0.76, 0), P(3.27, 3.27, 0), P(0.76, 3.27, 0)], '#9c9078');
+      // Bergfried mit Wappenbanner
+      solid(c, 1.35, 1.35, 2.65, 2.65, 0, 70, 'stone', rnd);
+      const KL = faceFn(1.35, 2.65, 2.65, 2.65, 0, 70), KR = faceFn(2.65, 2.65, 2.65, 1.35, 0, 70);
+      for (const v of [0.5, 0.78]) for (const u of [0.22, 0.78]) { quadF(c, KL, u - 0.025, v - 0.05, u + 0.025, v + 0.05, '#1e1a16'); quadF(c, KR, u - 0.025, v - 0.05, u + 0.025, v + 0.05, '#1e1a16'); }
+      windowF(c, KR, 0.5, 0.62, 0.12, 0.12);
+      quadF(c, KL, 0.4, 0.42, 0.6, 0.88, pc, 'rgba(30,20,10,.6)', 0.6);
+      poly(c, [KL(0.4, 0.42), KL(0.6, 0.42), KL(0.5, 0.34)], pc, 'rgba(30,20,10,.6)', 0.6);
+      c.strokeStyle = '#e8d8a8'; c.lineWidth = 1.2; c.beginPath(); segF(c, KL, 0.5, 0.48, 0.5, 0.8); segF(c, KL, 0.43, 0.68, 0.57, 0.68); c.stroke();
+      solid(c, 1.27, 1.27, 2.73, 2.73, 70, 75, 'stone', rnd, { top: TOP });
+      mer(1.27, 1.27, 2.73, 1.39, 75, true); mer(1.27, 1.27, 1.39, 2.73, 75, false);
+      mer(1.27, 2.61, 2.73, 2.73, 75, true); mer(2.61, 1.27, 2.73, 2.73, 75, false);
+      flag(c, 2.0, 2.0, 75, 20, pc);
+      for (const [x, y] of [[1.33, 1.33], [2.67, 1.33], [1.33, 2.67], [2.67, 2.67]]) roundTower(c, x, y, 0.17, 62, 84, rnd, { cone: 14, col: rc, slits: [] });
+      // vordere Mauern mit Wehrgang
+      solid(c, 0.6, 3.27, 3.4, 3.55, 0, WH, 'stone', rnd, { top: TOP }); mer(0.6, 3.43, 3.4, 3.55, WH, true);
+      solid(c, 3.27, 0.6, 3.55, 3.4, 0, WH, 'stone', rnd, { top: TOP }); mer(3.43, 0.6, 3.55, 3.4, WH, false);
+      roundTower(c, 0.6, 3.4, 0.46, 0, TT, rnd); roundTower(c, 3.4, 0.6, 0.46, 0, TT, rnd);
+      // Torhaus mit Fallgitter, flankiert von zwei Rundtürmen
+      roundTower(c, 1.45, 3.48, 0.3, 0, 34, rnd, { slits: [0.6], merlons: 7 });
+      solid(c, 1.62, 3.2, 2.38, 3.62, 0, 30, 'stone', rnd, { top: TOP });
+      const GF = faceFn(1.62, 3.62, 2.38, 3.62, 0, 30);
+      poly(c, [GF(0.24, 0), GF(0.76, 0), GF(0.76, 0.42), GF(0.5, 0.62), GF(0.24, 0.42)], '#1a1612', '#3a3026', 1);
+      c.strokeStyle = '#4a4a4e'; c.lineWidth = 0.8; c.beginPath();
+      for (const u of [0.33, 0.42, 0.5, 0.58, 0.67]) segF(c, GF, u, 0.08, u, 0.5);
+      for (const v of [0.15, 0.3, 0.45]) segF(c, GF, 0.25, v, 0.75, v);
+      c.stroke();
+      quadF(c, GF, 0.42, 0.72, 0.58, 0.86, pc, 'rgba(30,20,10,.6)', 0.5);
+      mer(1.62, 3.5, 2.38, 3.62, 30, true);
+      roundTower(c, 2.55, 3.48, 0.3, 0, 34, rnd, { slits: [0.6], merlons: 7 });
+      roundTower(c, 3.4, 3.4, 0.46, 0, TT, rnd);
+      flag(c, 3.4, 3.4, TT + 5, 14, pc); flag(c, 0.6, 0.6, TT + 5, 14, pc);
       break;
     }
     case 'lm_market': { // Marktkreuz: offene Markthalle mit Steinkreuz davor
@@ -4049,18 +4220,23 @@ function drawUnitShape(c, u, sx, sy, z, owner, type, facing, anim, moving, atk, 
       c.fillStyle = '#d9b75a'; c.beginPath(); c.arc(-4.3, -12.5 - bob, 1.1, 0, Math.PI * 2); c.fill();
       break;
     }
-    case 'archer': {
-      const cloak = mix(pc.main, '#3e5a26', 0.4);
-      human(cloak, '#4a3a2a', b => {
+    case 'archer': case 'longbow': { // Langbogenschütze: Filzhut mit Feder, mannshoher Bogen
+      const lb = type === 'longbow';
+      const cloak = lb ? mix(pc.main, '#5a6a2a', 0.5) : mix(pc.main, '#3e5a26', 0.4);
+      human(cloak, '#4a3a2a', lb ? b => {
+        c.fillStyle = '#5a4a2e'; c.beginPath(); c.ellipse(0.4, -22.6 + b, 5.4, 1.5, -0.1, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.moveTo(-2.6, -22.8 + b); c.quadraticCurveTo(-1.5, -27.5 + b, 2.8, -26 + b); c.lineTo(3.6, -22.8 + b); c.closePath(); c.fill();
+        c.strokeStyle = pc.light; c.lineWidth = 1.2; c.beginPath(); c.moveTo(-1.5, -24 + b); c.quadraticCurveTo(-5.5, -28 + b, -8, -27 + b); c.stroke();
+      } : b => {
         c.fillStyle = shade(cloak, 0.8); c.beginPath(); c.moveTo(-3.8, -19 + b); c.quadraticCurveTo(-2, -26 + b, 1, -25.5 + b); c.quadraticCurveTo(4.6, -24 + b, 4, -19.5 + b); c.quadraticCurveTo(0, -23.5 + b, -3.8, -19 + b); c.fill();
       }, () => { c.fillStyle = '#6b4a2b'; c.save(); c.rotate(-0.3); c.fillRect(-3.5, -19 - bob, 2.8, 8.5); c.fillStyle = '#eee'; for (let k = 0; k < 3; k++) c.fillRect(-3.3 + k * 0.9, -21 - bob, 0.6, 2.2); c.restore(); });
-      c.fillStyle = pc.main; c.fillRect(-4.1, -11.5 - bob, 8.2, 1.4);
-      const pull = atk > 0 ? 3 * swing : 0;
+      c.fillStyle = lb ? '#6b4a2b' : pc.main; c.fillRect(-4.1, -11.5 - bob, 8.2, 1.4);
+      const pull = atk > 0 ? 3 * swing : 0, br = lb ? 12.5 : 8, ba = lb ? 1.25 : 1.15, by = lb ? -15 : -14, bx = lb ? 1.5 : 4;
       arm(5.5, -14);
-      c.strokeStyle = '#5a3d20'; c.lineWidth = 1.5; c.beginPath(); c.arc(4, -14 - bob, 8, -1.15, 1.15); c.stroke();
+      c.strokeStyle = '#5a3d20'; c.lineWidth = lb ? 1.7 : 1.5; c.beginPath(); c.arc(bx, by - bob, br, -ba, ba); c.stroke();
       c.strokeStyle = 'rgba(245,240,220,.85)'; c.lineWidth = 0.5;
-      c.beginPath(); c.moveTo(4 + Math.cos(-1.15) * 8, -14 - bob + Math.sin(-1.15) * 8); c.lineTo(4 - pull, -14 - bob); c.lineTo(4 + Math.cos(1.15) * 8, -14 - bob + Math.sin(1.15) * 8); c.stroke();
-      if (atk > 0) { c.strokeStyle = '#3a2a19'; c.lineWidth = 0.9; c.beginPath(); c.moveTo(4 - pull, -14 - bob); c.lineTo(13, -14 - bob); c.stroke(); }
+      c.beginPath(); c.moveTo(bx + Math.cos(-ba) * br, by - bob + Math.sin(-ba) * br); c.lineTo(bx + br * 0.4 - pull, by - bob); c.lineTo(bx + Math.cos(ba) * br, by - bob + Math.sin(ba) * br); c.stroke();
+      if (atk > 0) { c.strokeStyle = '#3a2a19'; c.lineWidth = 0.9; c.beginPath(); c.moveTo(bx + br * 0.4 - pull, by - bob); c.lineTo(bx + br + 5, by - bob); c.stroke(); }
       break;
     }
     case 'horseman': case 'scout': case 'knight': {
@@ -4135,6 +4311,26 @@ function drawUnitShape(c, u, sx, sy, z, owner, type, facing, anim, moving, atk, 
       c.fillStyle = pc.main; c.beginPath(); c.moveTo(-7.5, -18 - bob); c.lineTo(-1.5, -18 - bob); c.lineTo(-1.8, -10 - bob); c.lineTo(-4.5, -5.5 - bob); c.lineTo(-7.2, -10 - bob); c.closePath(); c.fill();
       c.strokeStyle = '#d9b75a'; c.lineWidth = 0.9; c.stroke();
       c.strokeStyle = pc.light; c.lineWidth = 1; c.beginPath(); c.moveTo(-4.5, -17 - bob); c.lineTo(-4.5, -7.5 - bob); c.moveTo(-7, -14 - bob); c.lineTo(-2, -14 - bob); c.stroke();
+      break;
+    }
+    case 'ordensritter': { // Ordensritter: Topfhelm, weißer Waffenrock mit Kreuz in Spielerfarbe, Zweihänder
+      const armor = '#9aa1aa';
+      human('#ecebe4', '#55504a', b => {
+        c.fillStyle = '#b4bcc6'; c.beginPath(); c.moveTo(-3.3, -17.6 + b); c.lineTo(-3.4, -24.4 + b); c.quadraticCurveTo(0.5, -25.8 + b, 4.4, -24.4 + b); c.lineTo(4.4, -17.6 + b); c.closePath(); c.fill();
+        c.strokeStyle = 'rgba(20,20,30,.6)'; c.lineWidth = 0.5; c.stroke();
+        c.fillStyle = '#16161c'; c.fillRect(0.8, -21.8 + b, 3.6, 0.9);
+        c.strokeStyle = '#d9b75a'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(2.6, -24.6 + b); c.lineTo(2.6, -17.8 + b); c.stroke();
+      });
+      c.strokeStyle = armor; c.lineWidth = 2; c.beginPath(); c.moveTo(-1.5, -8 - bob); c.lineTo(-1.5 - step * 2.6, -1.6); c.moveTo(1.5, -8 - bob); c.lineTo(1.5 + step * 2.6, -1.6); c.stroke();
+      c.fillStyle = pc.main; c.fillRect(-0.7, -16.2 - bob, 1.4, 8); c.fillRect(-2.9, -13.6 - bob, 5.8, 1.4);
+      c.fillStyle = '#3a2a19'; c.fillRect(-4.2, -9.4 - bob, 8.4, 1.2);
+      // Zweihänder, beim Schlag von oben nach vorn
+      const sa = -2.0 + swing * 2.3;
+      const hx = 2.4 + Math.cos(sa) * 3.5, hy = -14 - bob + Math.sin(sa) * 3.5;
+      c.strokeStyle = armor; c.lineWidth = 2; c.beginPath(); c.moveTo(2.4, -15.2 - bob); c.lineTo(hx, hy); c.stroke();
+      c.strokeStyle = '#5a3d20'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(hx - Math.cos(sa) * 3, hy - Math.sin(sa) * 3); c.lineTo(hx, hy); c.stroke();
+      c.strokeStyle = '#e8ebef'; c.lineWidth = 2; c.beginPath(); c.moveTo(hx + Math.cos(sa) * 1.5, hy + Math.sin(sa) * 1.5); c.lineTo(hx + Math.cos(sa) * 17, hy + Math.sin(sa) * 17); c.stroke();
+      c.strokeStyle = '#d9b75a'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(hx + Math.cos(sa) * 1.2 - Math.sin(sa) * 3, hy + Math.sin(sa) * 1.2 + Math.cos(sa) * 3); c.lineTo(hx + Math.cos(sa) * 1.2 + Math.sin(sa) * 3, hy + Math.sin(sa) * 1.2 - Math.cos(sa) * 3); c.stroke();
       break;
     }
     case 'crossbow': case 'handcannon': { // Armbrustschütze / Handkanonier
@@ -4317,6 +4513,19 @@ function techIcon(kind, pc) {
     c.lineWidth = 2.5; for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; c.beginPath(); c.moveTo(-4 - Math.cos(a) * 16, 8 - Math.sin(a) * 16); c.lineTo(-4 + Math.cos(a) * 16, 8 + Math.sin(a) * 16); c.stroke(); }
     c.fillStyle = '#9a6a3c'; c.fillRect(-14, -22, 28, 14); c.strokeStyle = dark; c.lineWidth = 1.5; c.strokeRect(-14, -22, 28, 14);
     c.strokeStyle = wood; c.lineWidth = 3.5; c.beginPath(); c.moveTo(14, -12); c.lineTo(28, 2); c.stroke();
+  } else if (kind === 'tower') { // Wehrgänge: Turm mit hölzernem Wehrgang
+    c.fillStyle = steel; c.strokeStyle = dark; c.lineWidth = 1.5;
+    c.fillRect(-11, -8, 22, 34); c.strokeRect(-11, -8, 22, 34);
+    c.fillStyle = '#1e1a16'; c.fillRect(-1.5, 2, 3, 9);
+    c.fillStyle = wood; c.fillRect(-17, -16, 34, 9); c.strokeRect(-17, -16, 34, 9);
+    c.strokeStyle = '#4a2f1a'; c.lineWidth = 1.2; c.beginPath(); for (let x = -12; x <= 12; x += 6) { c.moveTo(x, -16); c.lineTo(x, -7); } c.stroke();
+    c.fillStyle = pc.main; c.strokeStyle = dark; c.beginPath(); c.moveTo(-19, -16); c.lineTo(0, -30); c.lineTo(19, -16); c.closePath(); c.fill(); c.stroke();
+  } else if (kind === 'fire') { // Brandpfeile
+    c.rotate(-Math.PI / 4); c.strokeStyle = wood; c.lineWidth = 3.5; c.beginPath(); c.moveTo(0, 26); c.lineTo(0, -14); c.stroke();
+    c.fillStyle = steel; c.strokeStyle = dark; c.lineWidth = 1.2; c.beginPath(); c.moveTo(0, -28); c.lineTo(6, -16); c.lineTo(-6, -16); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#e8622a'; c.beginPath(); c.moveTo(0, -30); c.quadraticCurveTo(14, -18, 6, -6); c.quadraticCurveTo(0, -12, -6, -6); c.quadraticCurveTo(-14, -18, 0, -30); c.fill();
+    c.fillStyle = '#f8c84a'; c.beginPath(); c.moveTo(0, -24); c.quadraticCurveTo(7, -16, 3, -9); c.quadraticCurveTo(0, -12, -3, -9); c.quadraticCurveTo(-7, -16, 0, -24); c.fill();
+    c.fillStyle = '#e8e2d0'; c.beginPath(); c.moveTo(0, 16); c.lineTo(-7, 26); c.lineTo(-7, 32); c.lineTo(0, 24); c.lineTo(7, 32); c.lineTo(7, 26); c.closePath(); c.fill();
   } else if (kind === 'shirt') {
     c.fillStyle = pc.main; c.strokeStyle = dark; c.lineWidth = 2;
     c.beginPath(); c.moveTo(-8, -24); c.lineTo(-24, -14); c.lineTo(-18, -2); c.lineTo(-13, -6); c.lineTo(-13, 24); c.lineTo(13, 24); c.lineTo(13, -6); c.lineTo(18, -2); c.lineTo(24, -14); c.lineTo(8, -24); c.quadraticCurveTo(0, -16, -8, -24); c.closePath(); c.fill(); c.stroke();
@@ -4370,7 +4579,7 @@ function render() {
   }
   // Auswahlringe (unter den Einheiten)
   for (const e of UI.sel) {
-    if (e.dead) continue;
+    if (e.dead || e.inside) continue;
     if (e.kind === 'unit') {
       const p = lerpPos(e); const s = w2s(p.x, p.y); if (!vis(s.x, s.y)) continue;
       const r = (e.def.radius * 40 + 3) * z;
@@ -4700,7 +4909,7 @@ const UI = {
   buildMenu: null, // null | 'eco' | 'mil' | 'def'
 };
 function setSelection(list) {
-  UI.sel = list.filter(e => e && !e.dead);
+  UI.sel = list.filter(e => e && !e.dead && !e.inside);
   UI.selSet = new Set(UI.sel);
   UI.buildMenu = null; UI.cmdMode = null;
   refreshPanel(true);
@@ -4754,12 +4963,12 @@ function cmdButton(opts) {
 const BUILD_GROUPS = {
   eco: ['house', 'mill', 'lumber', 'mining', 'farm', 'market', 'tc'],
   mil: ['barracks', 'range', 'stable', 'siege', 'blacksmith'],
-  def: ['palisade', 'pgate', 'wall', 'sgate', 'tower', 'keep'],
+  def: ['palisade', 'pgate', 'wall', 'sgate', 'tower', 'keep', 'castle'],
   lm: LANDMARKS,
 };
 // Tastenkürzel meiden W/A/S/D (Kamera)
 const BUILD_KEYS = { house: 'Q', mill: 'E', lumber: 'R', mining: 'F', farm: 'T', market: 'C', tc: 'G', barracks: 'Q', range: 'E', stable: 'R', siege: 'F', blacksmith: 'T',
-  palisade: 'Q', pgate: 'E', wall: 'R', sgate: 'F', tower: 'T', keep: 'G', lm_market: 'Q', lm_school: 'E', lm_treasury: 'R', lm_fort: 'F', lm_cathedral: 'T', lm_academy: 'G' };
+  palisade: 'Q', pgate: 'E', wall: 'R', sgate: 'F', tower: 'T', keep: 'G', castle: 'C', lm_market: 'Q', lm_school: 'E', lm_treasury: 'R', lm_fort: 'F', lm_cathedral: 'T', lm_academy: 'G' };
 const TRAIN_KEYS = ['Q', 'E', 'R', 'F'];
 const TECH_KEYS = ['T', 'G', 'C', 'V'];
 const MKT_KEYS = ['Q', 'E', 'R', 'F', 'T', 'G'];
@@ -4794,7 +5003,7 @@ function refreshCommands() {
     if (!UI.buildMenu) {
       box.appendChild(cmdButton({ text: 'Wirt\u00ADschaft', hotkey: 'Q', tip: () => '<div class="tt">Wirtschaftsgebäude (Q)</div>Häuser, Lager, Bauernhöfe, Dorfzentrum', onClick: () => { UI.buildMenu = 'eco'; refreshCommands(); } }));
       box.appendChild(cmdButton({ text: 'Militär', hotkey: 'E', tip: () => '<div class="tt">Militärgebäude</div>Kaserne, Schießstand, Stall, Belagerungswerkstatt', onClick: () => { UI.buildMenu = 'mil'; refreshCommands(); } }));
-      box.appendChild(cmdButton({ text: 'Vertei\u00ADdigung', hotkey: 'R', tip: () => '<div class="tt">Verteidigung</div>Palisaden, Steinmauern, Tore, Türme, Bergfried', onClick: () => { UI.buildMenu = 'def'; refreshCommands(); } }));
+      box.appendChild(cmdButton({ text: 'Vertei\u00ADdigung', hotkey: 'R', tip: () => '<div class="tt">Verteidigung</div>Palisaden, Steinmauern, Tore, Türme, Bergfried, Burg', onClick: () => { UI.buildMenu = 'def'; refreshCommands(); } }));
       const nextAge = AGES[p.age + 1];
       box.appendChild(cmdButton({ text: 'Wahr\u00ADzeichen', hotkey: 'F', active: LANDMARKS.some(k => !buildBlock(p, k) && BUILDINGS[k].landmark === p.age + 1 && canAfford(p, BUILDINGS[k].cost)),
         tip: () => `<div class="tt">Wahrzeichen (F)</div>${nextAge ? 'Baue eines von zwei Wahrzeichen, um in die <b>' + nextAge.name + '</b> aufzusteigen.' + costHtml(nextAge.cost, p) : 'Du bist im letzten Zeitalter. Weitere Wahrzeichen bringen ihren Bonus.'}`,
@@ -4851,6 +5060,12 @@ function refreshCommands() {
           onClick: () => { issue({ c: 'mkt', r, buy: false }); refreshPanel(true); } }));
       });
     }
+    if (b.built && d.garrison) {
+      const n = b.gar ? b.gar.length : 0;
+      box.appendChild(cmdButton({ text: 'Heraus\u00ADlassen', hotkey: 'V', disabled: !n,
+        tip: () => `<div class="tt">Besatzung herauslassen (V)</div>${n ? n + ' Einheiten verlassen das Gebäude und gehen zum Sammelpunkt.' : 'Niemand im Gebäude. Wähle Einheiten oder Dorfbewohner und ' + (IS_TOUCH ? 'tippe' : 'klicke rechts') + ' auf das Gebäude, um es zu besetzen.'}`,
+        onClick: () => { if (n) issue({ c: 'ungar', id: b.id }); refreshPanel(true); } }));
+    }
     box.appendChild(cmdButton({ text: 'Abreißen', hotkey: 'Entf', tip: () => '<div class="tt">Abreißen (Entf)</div>Gebäude zerstören. Unfertige Gebäude erstatten einen Teil der Kosten.', onClick: () => deleteSelection() }));
   }
 }
@@ -4887,14 +5102,14 @@ function deleteSelection() {
 function refreshPanel(force) {
   if (!force && G.time - UI.lastInfoT < 0.25) return;
   UI.lastInfoT = G.time;
-  UI.sel = UI.sel.filter(e => !e.dead);
+  UI.sel = UI.sel.filter(e => !e.dead && !e.inside);
   if (UI.sel.length !== UI.selSet.size) UI.selSet = new Set(UI.sel);
   const info = $('selInfo');
   const key = UI.sel.map(e => e.id).join(',') + '|' + (UI.buildMenu || '') + '|' + (UI.cmdMode || '') + '|' + (UI.placing ? UI.placing.type : '');
   const p = G.players[G.human];
   // Kosten-Verfügbarkeit ändert sich -> Befehle neu, aber gedrosselt
   const affordKey = RES_TYPES.map(k => Math.floor(p.res[k] / 25)).join(',') + (UI.sel[0] && UI.sel[0].built ? 'b' : '')
-    + p.age + '|' + Object.keys(p.techs).length + '|' + Object.keys(p.researching).length + '|' + (p.mkt ? p.mkt.food + p.mkt.wood * 3 + p.mkt.stone * 7 : 0);
+    + p.age + '|' + (UI.sel[0] && UI.sel[0].gar ? UI.sel[0].gar.length : '') + '|' + Object.keys(p.techs).length + '|' + Object.keys(p.researching).length + '|' + (p.mkt ? p.mkt.food + p.mkt.wood * 3 + p.mkt.stone * 7 : 0);
   if (force || key !== UI.lastSelKey || affordKey !== UI.lastAfford) { refreshCommands(); UI.lastSelKey = key; UI.lastAfford = affordKey; }
   if (!UI.sel.length) {
     const idle = G.units.filter(u => !u.dead && u.owner === G.human && u.type === 'villager' && !u.order).length;
@@ -4939,7 +5154,15 @@ function refreshPanel(force) {
         if (d.drop) facts.push('Lager für: ' + d.drop.map(r => RES_DE[r]).join(', '));
         if (d.pop) facts.push('+' + d.pop + ' Bevölkerung');
         if (facts.length) html += `<div class="sub">${facts.join(' · ')}</div>`;
-        if (d.attack) html += `<div class="sub">Schießt ${d.attack.n > 1 ? d.attack.n + ' ' : ''}Pfeile: ${d.attack.dmg} Schaden, Reichweite ${d.attack.range}</div>`;
+        if (d.attack) {
+          const n = (d.attack.n || 1) + (e.gar ? e.gar.length >> 1 : 0), dmg = d.attack.dmg + (e.owner < 2 ? G.players[e.owner].towerAtk || 0 : 0);
+          html += `<div class="sub">Schießt ${n > 1 ? n + ' ' : ''}Pfeile: ${dmg} Schaden, Reichweite ${d.attack.range}</div>`;
+        }
+        if (d.garrison) {
+          const kinds = {}; for (const u of e.gar) kinds[u.type] = (kinds[u.type] || 0) + 1;
+          html += `<div class="sub">Besatzung: <b>${e.gar.length} / ${d.garrison}</b>${Object.keys(kinds).map(k => ` <img src="${ICONS[k]}" style="height:16px;vertical-align:middle">${kinds[k]}`).join('')}</div>`;
+          if (own && !e.gar.length) html += `<div class="sub" style="opacity:.6">Einheiten per ${IS_TOUCH ? 'Antippen' : 'Rechtsklick'} hineinschicken: geschützt, heilen, je zwei ein Pfeil mehr.</div>`;
+        }
         if (d.landmark || e.capital) html += `<div class="sub" style="color:#ffe2a6">Wahrzeichen${d.landmark ? ' (' + AGES[d.landmark].name + ')' : ''} – verliert ein Spieler alle Wahrzeichen, ist das Spiel verloren.</div>`;
         if (d.landmark && d.eff) html += `<div class="sub">${d.desc.replace(/^Wahrzeichen[^.]*\. /, '')}</div>`;
         if (own && d.market) html += `<div class="sub">Preise (Gold je 100): ${['food', 'wood', 'stone'].map(r => RES_DE[r] + ' ' + mktBuy(p, r) + ' / ' + mktSell(p, r)).join(' · ')}</div>`;

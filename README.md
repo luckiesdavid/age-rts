@@ -22,14 +22,39 @@ Der Link zeigt auf die Online-Version unter <https://luckiesdavid.github.io/age-
 
 **Technik:** Die Browser verbinden sich direkt per WebRTC (Bibliothek [PeerJS](https://peerjs.com), wird nur im Mehrspielermodus aus dem CDN geladen). Der kostenlose öffentliche PeerJS-Server vermittelt nur den Verbindungsaufbau; STUN und TURN sorgen dafür, dass die Verbindung auch hinter Routern (NAT) und Firewalls zustande kommt. Das Spiel läuft im *deterministischen Lockstep*: Beide Rechner simulieren dasselbe Spiel, es werden nur die Befehle der Spieler übertragen (einige Bytes pro 100 ms). Befehle werden je nach gemessenem Ping 200–800 ms in der Zukunft eingeplant, damit sie bei beiden gleichzeitig ausgeführt werden. Eine Prüfsumme pro Sekunde erkennt, falls die Spielstände doch auseinanderlaufen.
 
+**Verbindungsabbrüche und Fortsetzen:**
+- Bricht die Verbindung kurz ab (WLAN-Wechsel, Funkloch), hält das Spiel bei beiden an („Verbindung unterbrochen“) und verbindet sich automatisch neu. Befehle, die währenddessen unterwegs waren, werden nachgeliefert; danach geht es ohne Datenverlust weiter.
+- Lädt ein Spieler die Seite neu, kommt er über den Einladungslink wieder ins laufende Spiel; der aktuelle Spielstand wird dabei übertragen.
+- Der Spielstand wird alle 30 Sekunden, beim Abbruch und beim Schließen des Tabs lokal zwischengespeichert. Unter **Mehrspieler → Fortsetzen** geht ein abgebrochenes Spiel später weiter: Der Ersteller öffnet es wieder, der Mitspieler nutzt den alten Einladungslink oder ebenfalls „Fortsetzen“. Der neuere Stand der beiden Spieler gewinnt.
+- Im Pausenmenü beendet **Unterbrechen & später weiterspielen** das Spiel für beide, ohne dass jemand verliert.
+- Sollten die Spielstände doch einmal auseinanderlaufen, überträgt der Ersteller automatisch seinen Stand.
+
 **Hinweise:**
-- Speichern und Laden gibt es nur im Einzelspieler.
+- Die drei Speicherplätze gibt es nur im Einzelspieler; im Mehrspieler gibt es einen automatischen Zwischenstand.
 - Pause (Leertaste/P) gilt für beide. **Aufgeben & Hauptmenü** beendet das Spiel; der Mitspieler gewinnt.
 - Wechselt ein Spieler den Tab, hält der Browser das Spiel an; der Mitspieler sieht dann „Warte auf Mitspieler …“.
 - Eigener Vermittlungsserver statt des öffentlichen: `npx -p peer peerjs --port 9000` starten und das Spiel mit `index.html#peer=dein-server:9000` öffnen (beide Spieler).
 - Test der Lockstep-Logik ohne Browser: `node tests/lockstep-sim.mjs [Minuten] [Seed] [Latenz in Ticks]`.
+- Test für Abbruch, Nachliefern und Fortsetzen ohne Browser: `node tests/reconnect-sim.mjs [Seed]`.
 
 **Ziel (Wahrzeichen-Sieg):** Zerstöre alle Wahrzeichen des Gegners. Sein erstes Dorfzentrum zählt als Wahrzeichen, dazu kommen alle Wahrzeichen, die er für den Aufstieg in neue Zeitalter gebaut hat. Wer keine fertigen Gebäude außer Mauern mehr hat, verliert ebenfalls. Umgekehrt gilt dasselbe für dich.
+
+## Auf dem Handy
+
+Das Spiel läuft auch auf Handys und Tablets (einfach <https://luckiesdavid.github.io/age-rts/> öffnen, am besten im Querformat; Hochformat geht auch). Auf Touch-Geräten schaltet es automatisch in den Handymodus: kompakte Leisten, große Knöpfe, Vollbild beim Spielstart und eine automatisch sinkende Auflösung, falls die Bildrate zu niedrig ist. Zum Ausprobieren am Rechner `index.html#touch` öffnen.
+
+| Geste | Wirkung |
+|---|---|
+| Tippen | auswählen; mit eigener Auswahl: bewegen, angreifen, sammeln, bauen/reparieren (wie Rechtsklick) |
+| Lange drücken | nur auswählen (z. B. ein eigenes Gebäude, während Dorfbewohner ausgewählt sind) |
+| Lange drücken und ziehen | Rahmenauswahl |
+| Doppelt tippen | alle gleichartigen Einheiten/Gebäude im Bild |
+| Ein Finger wischen | Kamera bewegen (mit Nachlauf) |
+| Zwei Finger | zoomen und schieben |
+| Minikarte antippen/ziehen | Kamera springt dorthin |
+| Befehlsknopf lange drücken | Kosten und Beschreibung anzeigen |
+
+Oben links gibt es Knöpfe für **Abwählen** (wie Esc), **Mehrfach** (Tippen fügt zur Auswahl hinzu bzw. entfernt), **Untätig** (mit Anzahl), **Zentrum** und **Armee**. Beim Bauen erscheint die Vorschau in der Bildmitte; mit dem Finger verschieben (Mauern: ziehen) und oben rechts mit **Bauen** bestätigen.
 
 ## Steuerung (Mac mit Maus oder Trackpad)
 

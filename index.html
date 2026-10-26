@@ -6262,7 +6262,7 @@ function setupInput() {
     if (!running) return;
     if (k === 'f5' || ((e.ctrlKey || e.metaKey) && k === 's')) { e.preventDefault(); if (G.net) return; openSaveScreen('save'); if (!paused) togglePause(); return; }
     if (k === ' ' || k === 'p') { e.preventDefault(); togglePause(); return; }
-    if (k === 'enter' && G.net && !G.over) { e.preventDefault(); chatOpen(); return; } // auch in der Pause
+    if (k === 'enter' && !G.over) { e.preventDefault(); chatOpen(); return; } // auch in der Pause
     if (paused) return;
     INPUT.keys.add(k);
     if (k === 'escape') { escapeAction(); return; }
@@ -7015,9 +7015,10 @@ function netUpdateLabel() {
   $('diffLabel').title = 'Seed ' + G.seed + ' · Relay-Verbrauch dieses Geräts im ' + relayUsage().month + ': ' + fmtBytes(relayUsage().bytes);
 }
 
-/* ---------- Chat im Mehrspieler ----------
-   Läuft neben dem Lockstep als eigene Nachricht { k: 'chat', x }, berührt also den Spielzustand nicht.
-   Text nur über textContent einfügen; Länge und Häufigkeit sind in beide Richtungen begrenzt. */
+/* ---------- Chat ----------
+   Im Mehrspieler läuft er neben dem Lockstep als eigene Nachricht { k: 'chat', x }, berührt also den Spielzustand nicht.
+   Text nur über textContent einfügen; Länge und Häufigkeit sind in beide Richtungen begrenzt.
+   Im Einzelspieler gibt es niemanden zum Schreiben, dafür versteckte Cheats wie in Age of Empires (chatCheat). */
 const CHAT_MAX = 120, CHAT_KEEP = 40, CHAT_FADE = 12000;
 const CHAT = { open: false, sent: [], recv: [], unread: false };
 function chatClean(t) { return String(t == null ? '' : t).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX); }
@@ -7028,6 +7029,7 @@ function chatReset(on) {
   $('chatLog').innerHTML = ''; $('chatIn').value = '';
   $('chat').classList.add('hidden'); $('chat').classList.remove('open'); $('chatForm').classList.add('hidden');
   $('btnChat').classList.toggle('hidden', !on); $('btnPauseChat').classList.toggle('hidden', !on); chatBadge();
+  $('btnChat').title = G && G.net ? 'Chat mit deinem Mitspieler (Enter)' : 'Chat (Enter)';
 }
 function chatBadge() { $('btnChat').innerHTML = '<span class="cl">Chat</span><span class="ci">💬</span>' + (CHAT.unread ? '<span class="dot"></span>' : ''); }
 function chatLine(who, text) {
@@ -7045,7 +7047,7 @@ function chatLine(who, text) {
   setTimeout(() => d.classList.add('old'), CHAT_FADE);
 }
 function chatOpen() {
-  if (!running || !G || !G.net || G.over) return;
+  if (!running || !G || G.over) return;
   CHAT.open = true; CHAT.unread = false; chatBadge();
   INPUT.keys.clear(); // sonst scrollt die Kamera mit einer gerade gedrückten Pfeiltaste weiter
   $('chat').classList.remove('hidden'); $('chat').classList.add('open'); $('chatForm').classList.remove('hidden');
@@ -7061,12 +7063,45 @@ function chatClose() {
 function chatSend() {
   const text = chatClean($('chatIn').value);
   if (!text) { chatClose(); return; }
+  if (!G.net) { $('chatIn').value = ''; chatClose(); if (!chatCheat(text)) chatLine(G.human, text); return; }
   if (!NET.conn || !NET.conn.open) { chatLine(-1, 'Nicht verbunden – die Nachricht wurde nicht gesendet.'); return; }
   if (!chatRate(CHAT.sent, 4, 5000)) { chatLine(-1, 'Langsam – höchstens 4 Nachrichten in 5 Sekunden.'); return; }
   netSend({ k: 'chat', x: text });
   chatLine(G.human, text);
   $('chatIn').value = '';
   chatClose();
+}
+// Cheats nur im Einzelspieler: im Mehrspieler würde eine lokale Änderung den Lockstep auseinanderlaufen lassen
+const CHEATS = {
+  'cheese steak jimmy': () => chatRes({ food: 1000 }, '+1000 Nahrung'),
+  'lumberjack': () => chatRes({ wood: 1000 }, '+1000 Holz'),
+  'robin hood': () => chatRes({ gold: 1000 }, '+1000 Gold'),
+  'rock on': () => chatRes({ stone: 1000 }, '+1000 Stein'),
+  'schatzkammer': () => chatRes(Object.fromEntries(RES_TYPES.map(r => [r, 1000])), '+1000 von jedem Rohstoff'),
+  'aegis': () => { // alle eigenen Baustellen sofort fertig
+    let n = 0;
+    for (const b of G.buildings) if (!b.dead && b.owner === G.human && !b.built) { b.hp = b.maxHp; completeBuilding(b); n++; }
+    G.mmDirty = true;
+    return n ? n + (n === 1 ? ' Baustelle' : ' Baustellen') + ' fertiggestellt' : 'Keine Baustellen – nichts zu tun';
+  },
+  'how do you turn this on': () => { // fünf Ritter am Dorfzentrum
+    const tc = G.buildings.find(b => !b.dead && b.owner === G.human && b.type === 'tc') || G.buildings.find(b => !b.dead && b.owner === G.human);
+    if (!tc) return 'Kein Gebäude, an dem die Ritter erscheinen könnten';
+    const d = BUILDINGS[tc.type];
+    for (let i = 0; i < 5; i++) spawnUnit('knight', G.human, tc.x + d.w + 0.6, tc.y + 0.5 + i * 0.8);
+    return 'Fünf Ritter eilen herbei';
+  },
+  'i r winner': () => {
+    for (const pl of G.players) if (!pl.defeated && foes(pl.id, G.human)) { pl.defeated = true; pl.stats.defT = G.time; }
+    return 'Sieg!';
+  },
+};
+function chatRes(add, what) { const p = G.players[G.human]; for (const r in add) p.res[r] += add[r]; return what; }
+function chatCheat(text) {
+  const f = CHEATS[text.toLowerCase().replace(/[^a-zäöüß ]/g, '').replace(/ +/g, ' ').trim()];
+  if (!f || G.net || G.over) return false;
+  chatLine(-1, 'Cheat: ' + f());
+  return true;
 }
 function chatReceive(m) {
   if (!running || !G || !G.net) return;
@@ -7576,7 +7611,7 @@ function beginSession() {
   layoutUI(); tryFullscreen();
   updateDiffUI();
   paused = false; running = true; acc = 0;
-  chatReset(G.net);
+  chatReset(true);
   $('btnSaveMenu').classList.toggle('hidden', G.net); $('btnLoadMenu').classList.toggle('hidden', G.net); $('btnSaveLater').classList.toggle('hidden', !G.net);
   G.nextAutosave = G.time + AUTOSAVE_EVERY;
 }

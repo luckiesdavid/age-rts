@@ -127,7 +127,7 @@ console.log(JSON.stringify({ cmdsSent, hashes, summary }, null, 1));
 const statsJson = worlds.map(w => JSON.stringify(w.G.players.map(p => p.stats)));
 const st = worlds[0].G.players[0].stats;
 console.log('Statistik Spieler 1:', JSON.stringify({ ...st, hist: st.hist.length + ' Punkte' }));
-const statsOk = statsJson[0] === statsJson[1] && st.hist.length > 0 && st.gathered > 0 && st.g.food + st.g.wood + st.g.gold + st.g.stone === st.gathered;
+const statsOk = statsJson[0] === statsJson[1] && st.hist.length > 0 && st.techs > 0 && st.g.food + st.g.wood + st.g.gold + st.g.stone === st.gathered;
 if (!statsOk) console.log('FEHLER: Statistik weicht ab oder fehlt');
 const ok = statsOk && hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick
   && summary[0].rotated > 0 && summary[0].rotated === summary[1].rotated;

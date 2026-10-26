@@ -2171,7 +2171,7 @@ function canPlace(type, tx, ty, owner, ignoreUnits) {
     if (G.terr[i] !== 0 || G.res[i]) return false;
     const b = G.bld[i];
     if (b) {
-      if (d.gate && b.owner === owner && BUILDINGS[b.type].line && (BUILDINGS[b.type].stone === !!d.stone)) continue;
+      if (d.gate && b.owner === owner && BUILDINGS[b.type].line && !!BUILDINGS[b.type].stone === !!d.stone) continue;
       return false;
     }
   }

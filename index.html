@@ -249,13 +249,17 @@ html, body {
 .endActs { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 20px; }
 .endActs .bigbtn { margin: 0; }
 .mpCols { display: flex; gap: 14px; }
-.mpCols > div { flex: 1; padding: 14px 12px; text-align: center; font-size: 14px; color: #4a3218;
+.mpCols > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 12px; text-align: center; font-size: 14px; color: #4a3218;
   background: rgba(255,251,238,.5); border: 1px solid #c2a571; border-radius: 3px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
 .mpCols > div > b { font: 700 15px/1.4 Cinzel, Georgia, serif; letter-spacing: .05em; color: #6b3018; }
 .mpCols small { color: #6b4a2b; font-style: italic; }
-.mpCols .bigbtn.alt { margin-top: 10px; }
-.mpCols input { width: 132px; margin-top: 8px; padding: 6px 8px; font: 18px monospace; letter-spacing: 3px; text-transform: uppercase; text-align: center; }
+.mpCols > div > .bigbtn.alt { margin: auto 0 0; }
+.mpJoin { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: auto; padding-top: 6px; }
+.mpJoin .bigbtn.alt { margin: 0; }
+.mpCols input { width: 100px; min-width: 0; padding: 6px 8px; font: 18px monospace; letter-spacing: 3px; text-transform: uppercase; text-align: center; }
 #mpStatus { margin-top: 14px; min-height: 22px; text-align: center; font-size: 15px; }
+#mpStatus:empty { margin-top: 0; min-height: 10px; }
+#mpVersion { margin-top: 10px; text-align: center; font-size: 12px; opacity: .6; }
 #mpStatus.err { color: #8a1d12; }
 #mpCode { font: bold 18px monospace; letter-spacing: 3px; color: #5a2a14; user-select: all; }
 #mpAdv { margin-top: 14px; font-size: 14px; }
@@ -574,8 +578,7 @@ body.touch .touchKeys { display: block; }
   <div class="panel">
     <h1 class="sm">Mehrspieler</h1>
     <div class="orn"></div>
-    <h2>1 gegen 1 über das Internet – ihr müsst nicht im selben Netz sein</h2>
-    <div id="mpVersion" style="text-align:center;font-size:12px;opacity:.6;margin:-10px 0 10px"></div>
+    <h2>1 gegen 1 über das Internet</h2>
     <div id="mpResume" class="slot hidden">
       <div class="meta" id="mpResumeMeta"></div>
       <button class="sbtn" id="btnMPResume">Fortsetzen</button>
@@ -583,13 +586,12 @@ body.touch .touchKeys { display: block; }
     </div>
     <div class="mpCols">
       <div>
-        <b>Spiel erstellen</b><br><small>Du erhältst einen Code für deinen Mitspieler.</small><br>
+        <b>Spiel erstellen</b><small>Du bekommst einen Einladungslink.</small>
         <button class="bigbtn alt" id="btnHost">Erstellen</button>
       </div>
       <div>
-        <b>Spiel beitreten</b><br><small>Code deines Mitspielers eingeben.</small><br>
-        <input id="joinCode" maxlength="6" placeholder="CODE" autocomplete="off" spellcheck="false"><br>
-        <button class="bigbtn alt" id="btnJoin">Beitreten</button>
+        <b>Spiel beitreten</b><small>Code deines Mitspielers eingeben.</small>
+        <div class="mpJoin"><input id="joinCode" maxlength="6" placeholder="CODE" autocomplete="off" spellcheck="false"><button class="bigbtn alt" id="btnJoin">Beitreten</button></div>
       </div>
     </div>
     <div id="mpStatus"></div>
@@ -600,8 +602,11 @@ body.touch .touchKeys { display: block; }
     </div>
     <div style="text-align:center"><button class="bigbtn alt" id="btnMPBack">Zurück</button></div>
     <details id="mpAdv">
-      <summary>Verbindungsprobleme? Netzwerktest und Relay-Server</summary>
-      <div class="sub">Klappt die Verbindung über das Internet nicht, hilft ein Relay-Server (TURN). Kostenlos z. B. bei
+      <summary>Verbindungsprobleme? Hilfe und Netzwerktest</summary>
+      <div class="sub">Die Verbindung läuft direkt zwischen euren Browsern (WebRTC). Klappt das nicht (strenge Firewall/NAT),
+        läuft sie über einen Relay-Server. Der Ersteller spielt <b style="color:#2f6fd6">Blau</b>, der Beitretende <b style="color:#d23a2e">Rot</b>.</div>
+      <div class="sub" id="mpRelayInfo"></div>
+      <div class="sub">Eigener Relay-Server (TURN), kostenlos z. B. bei
         <a href="https://www.metered.ca/tools/openrelay/" target="_blank" rel="noopener">Metered Open Relay</a>: Konto anlegen und
         App-Namen (aus <i>name</i>.metered.live) und API-Key hier eintragen. Es genügt, wenn der Ersteller das einträgt – der Einladungslink nimmt es mit.</div>
       <div class="row">App-Name: <input id="turnApp" type="text" placeholder="meinspiel" autocomplete="off" spellcheck="false">
@@ -609,12 +614,7 @@ body.touch .touchKeys { display: block; }
       <div class="row"><button class="tbtn" id="btnTurnSave">Speichern</button><button class="tbtn" id="btnNetTest">Verbindung testen</button></div>
       <div id="netTestOut" class="sub"></div>
     </details>
-    <h3>So funktioniert's</h3>
-    <div class="keys" style="columns:1">
-      Die Verbindung läuft direkt zwischen euren Browsern (WebRTC). Zum Verbinden wird kurz der öffentliche
-      PeerJS-Vermittlungsdienst genutzt; wenn keine direkte Verbindung möglich ist (strenge Firewall/NAT),
-      läuft sie über einen Relay-Server. Der Ersteller spielt <b style="color:#2f6fd6">Blau</b>, der Beitretende <b style="color:#d23a2e">Rot</b>.
-    </div>
+    <div id="mpVersion"></div>
   </div>
 </div>
 <div id="netWait" class="hidden">Warte auf Mitspieler …</div>
@@ -6647,7 +6647,8 @@ const ST_CHUNK = 7000;     // Spielstand in Stücken übertragen (PeerJS erlaubt
 
 function mpStatus(text, err) { const el = $('mpStatus'); el.innerHTML = text; el.classList.toggle('err', !!err); }
 function showMPScreen() {
-  $('mpVersion').textContent = 'Version ' + GAME_VERSION + (METERED_USER ? ' · Relay eingebaut' : '') + ' · Relay-Verbrauch dieses Geräts im Monat: ' + fmtBytes(relayUsage().bytes);
+  $('mpVersion').textContent = 'Version ' + GAME_VERSION;
+  $('mpRelayInfo').textContent = (METERED_USER ? 'Ein Relay-Server ist eingebaut. ' : '') + 'Relay-Verbrauch dieses Geräts im Monat: ' + fmtBytes(relayUsage().bytes) + '.';
   $('startScreen').classList.add('hidden'); $('mpScreen').classList.remove('hidden'); $('mpLobby').classList.add('hidden');
   mpStatus(''); $('mpPing').textContent = ''; renderMPResume();
   const m = /(?:^|[#&])join=([A-Za-z0-9]{6})/.exec(location.hash);

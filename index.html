@@ -281,6 +281,24 @@ html, body {
 .stats tr:nth-child(odd) td { background: rgba(120,80,30,.07); }
 .stats td:first-child, .stats th:first-child { text-align: left; }
 .center { text-align: center; }
+/* Spielstatistik am Ende: Reiter, Tabelle (scrollt auf schmalen Bildschirmen seitlich), Verlaufsgrafik */
+.endPanel { width: min(760px, calc(100vw - 44px)); }
+.endTabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 4px; }
+.etab { padding: 7px 12px; cursor: pointer; color: var(--ink); font: 700 13px/1.2 Cinzel, Georgia, serif; letter-spacing: .04em;
+  background: linear-gradient(#f9f0da, #ead9b0); border: 1px solid #b4955f; border-radius: 3px; box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
+.etab.sel { color: #5a1607; background: linear-gradient(#f6e3ae, #e2c482); border-color: #7d2412; box-shadow: inset 0 0 0 1px #7d2412; }
+.endTabs.sm .etab { padding: 4px 10px; font-size: 11.5px; }
+.statWrap { overflow-x: auto; margin-top: 6px; }
+.stats th small { display: block; font: italic 11.5px/1.2 Georgia, serif; letter-spacing: 0; color: #6b4a2b; }
+.stats th .sw { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.stats td.best { font-weight: 700; color: #5a1607; }
+.stats .ageS { display: none; }
+@media (min-width: 601px) { .endPanel .stats td:first-child { white-space: nowrap; } }
+.stats tr.sum td { font-weight: 700; border-top: 1px solid #a8854c; }
+.stats tr.grp td { padding-top: 10px; font: 700 12px/1.2 Cinzel, Georgia, serif; letter-spacing: .08em; color: #6b3018; background: none; }
+#endChart { display: block; width: 100%; height: 240px; margin-top: 8px; }
+.chartLegend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin-top: 4px; font-size: 13px; }
+.chartLegend span::before { content: ''; display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: 3px; background: var(--c); }
 /* Schmale Fenster: Minikarte und Befehlsfeld verkleinern, damit die Auswahlinfo Platz behält */
 @media (max-width: 1100px) {
   #mmWrap { width: 216px; padding: 8px; }
@@ -372,6 +390,8 @@ body.touch .touchKeys { display: block; }
   .endTitle { font-size: 38px !important; }
   .endActs { margin-top: 12px; }
   .stats td, .stats th { padding: 3px 10px; }
+  #endChart { height: 150px; }
+  .etab { padding: 5px 9px; font-size: 12px; }
   .help { margin-top: 12px; }
   .row { margin-top: 10px; }
   .plc { padding: 6px 4px 5px; font-size: 12.5px; } .plc small { font-size: 11px; margin-top: 2px; } .plc .team { margin-top: 3px; padding: 3px 1px; }
@@ -427,6 +447,11 @@ body.touch .touchKeys { display: block; }
   .endTitle { font-size: 40px !important; }
   .slot { flex-wrap: wrap; } .slot .meta { flex: 1 1 100%; } .slot.empty .meta { flex-basis: 0; } .slot .sbtn:not(.del) { margin-left: auto; }
   .stats { font-size: 13.5px; } .stats td, .stats th { padding: 5px 6px; }
+  .stats th { font-size: 12px; letter-spacing: .02em; }
+  .endTabs { gap: 4px; } .etab { padding: 6px 7px; font-size: 11.5px; letter-spacing: 0; }
+  .endPanel .stats { font-size: 12.5px; } .endPanel .stats td, .endPanel .stats th { padding: 4px 4px; } .endPanel .stats th small { font-size: 10.5px; }
+  .stats .ageL { display: none; } .stats .ageS { display: inline; }
+  #endChart { height: 190px; }
 }
 </style>
 </head>
@@ -605,11 +630,19 @@ body.touch .touchKeys { display: block; }
 </div>
 
 <div id="endScreen" class="screen hidden">
-  <div class="panel center">
+  <div class="panel center endPanel">
     <h1 id="endTitle" class="endTitle">Sieg!</h1>
     <div class="orn"></div>
     <h2 id="endSub"></h2>
-    <table class="stats" id="endStats"></table>
+    <div class="endTabs" id="endTabs">
+      <button class="etab sel" data-t="sum">Übersicht</button><button class="etab" data-t="mil">Militär</button><button class="etab" data-t="eco">Wirtschaft</button><button class="etab" data-t="tech">Technik</button><button class="etab" data-t="graph">Verlauf</button>
+    </div>
+    <div class="statWrap" id="endStatWrap"><table class="stats" id="endStats"></table></div>
+    <div id="endGraph" class="hidden">
+      <div class="endTabs sm" id="graphSel"><button class="etab sel" data-g="1">Punkte</button><button class="etab" data-g="2">Bevölkerung</button><button class="etab" data-g="3">Militär</button></div>
+      <canvas id="endChart"></canvas>
+      <div class="chartLegend" id="chartLegend"></div>
+    </div>
     <div class="endActs">
       <button class="bigbtn alt" id="btnRestartSame">Gleiche Karte erneut</button>
       <button class="bigbtn" id="btnNew">Neues Spiel</button>
@@ -1314,7 +1347,7 @@ function spawnUnit(type, owner, x, y) {
   };
   G.units.push(u); G.byId.set(u.id, u);
   if (owner < GAIA) {
-    const p = G.players[owner]; p.pop += d.pop; p.stats.trained++;
+    const p = G.players[owner]; p.pop += d.pop; p.stats.trained++; if (d.military) p.stats.mil++;
     if (type === 'villager') { u.hp = u.maxHp = d.hp + (p.villHp || 0); if (p.villSpeed > 1) u.spd = d.speed * p.villSpeed; }
   }
   return u;
@@ -1729,7 +1762,10 @@ function applyDamage(t, amount, src, by) {
   if (t.kind === 'bld' && src && src.owner < GAIA) t.lastHit = G.time;
   if (t.hp <= 0) {
     const o = src ? src.owner : by;
-    if (o != null && o < GAIA && t.owner < GAIA) G.players[o].stats[t.kind === 'bld' ? 'razed' : 'kills']++;
+    if (o != null && o < GAIA && t.owner < GAIA) {
+      const st = G.players[o].stats, v = costSum(t.kind === 'bld' ? BUILDINGS[t.type].cost : t.def.cost);
+      if (t.kind === 'bld') { st.razed++; st.razeVal += v; G.players[t.owner].stats.bldLost++; } else { st.kills++; st.killVal += v; }
+    }
     if (t.kind === 'unit') killUnit(t); else destroyBuilding(t);
   }
 }
@@ -1812,7 +1848,7 @@ function updateGather(u, o, dt) {
     u.idleNoDrop = false;
     if (distToRect(u.x, u.y, drop.tx, drop.ty, drop.w, drop.h) <= 1.15) {
       const p = G.players[u.owner];
-      p.res[u.carryType] += u.carry; p.stats.gathered += u.carry;
+      p.res[u.carryType] += u.carry; p.stats.gathered += u.carry; p.stats.g[u.carryType] += u.carry;
       u.carry = 0; u.carryFrac = 0; stopMoving(u); u.dropFail = 0;
       o.phase = 'go';
       return;
@@ -2123,8 +2159,8 @@ function canAfford(p, cost, mult) {
   for (const k in cost) if (p.res[k] < cost[k] * mult) return false;
   return true;
 }
-function pay(p, cost, mult) { mult = mult || 1; for (const k in cost) p.res[k] -= cost[k] * mult; }
-function refund(p, cost, f) { for (const k in cost) p.res[k] += Math.floor(cost[k] * f); }
+function pay(p, cost, mult) { mult = mult || 1; for (const k in cost) { p.res[k] -= cost[k] * mult; p.stats.spent += cost[k] * mult; } }
+function refund(p, cost, f) { for (const k in cost) { const v = Math.floor(cost[k] * f); p.res[k] += v; p.stats.spent -= v; } }
 
 // Prüft Bauplatz. Liefert true/false. Tore dürfen eigene Mauersegmente ersetzen.
 function canPlace(type, tx, ty, owner, ignoreUnits) {
@@ -2177,7 +2213,7 @@ function completeBuilding(b, silent) {
   if (d.landmark && b.owner < GAIA) {
     const p = G.players[b.owner];
     if (d.landmark > p.age) {
-      p.age = d.landmark;
+      p.age = d.landmark; p.stats.ageT[p.age] = G.time;
       if (!silent) notify((b.owner === G.human ? 'Du hast die ' : (G.net ? 'Der Gegner hat die ' : 'Die KI hat die ')) + AGES[p.age].name + ' erreicht!', b.owner !== G.human);
       silent = true;
     }
@@ -2257,6 +2293,7 @@ function cancelQueue(b, idx) {
 }
 function completeTech(owner, id) {
   const p = G.players[owner]; delete p.researching[id]; p.techs[id] = true;
+  p.stats.techs++; p.stats.techVal += costSum(TECHS[id].cost);
   const e = TECHS[id].eff;
   if (e.villHp) forEachUnit(u => { if (u.owner === owner && u.type === 'villager') { u.maxHp += e.villHp; u.hp += e.villHp; } });
   recalcPlayer(owner);
@@ -2515,8 +2552,41 @@ function updateEffects(dt) {
 const CORNERS = [{ x: 0, y: 0, f: 0.25 }, { x: 1, y: 1, f: 1.25 }, { x: 1, y: 0, f: 0.75 }, { x: 0, y: 1, f: 1.75 }];
 function newPlayer(i, team, corner) {
   return { id: i, team: team === undefined ? i : team, corner: corner === undefined ? i : corner, res: { food: 200, wood: 200, gold: 100, stone: 100 }, pop: 0, popCap: 0, gatherMult: 1, prodMult: 1,
-    stats: { gathered: 0, trained: 0, lost: 0, kills: 0, razed: 0, built: 0 }, defeated: false,
+    stats: newStats(), defeated: false,
     age: 0, techs: {}, researching: {}, mkt: { food: 100, wood: 100, stone: 100 } };
+}
+/* ---------- Spielstatistik ----------
+   Zähler für die Auswertung am Spielende (wie in Age of Empires). Sie werden nur in der Simulation
+   verändert und sind damit auf allen Rechnern gleich; der Spielablauf hängt nicht von ihnen ab. */
+const STAT_EVERY = 30, HIST_EVERY = 600; // Ticks: Höchstwerte jede Sekunde, Verlauf alle 20 Sekunden
+function newStats() {
+  return { gathered: 0, trained: 0, lost: 0, kills: 0, razed: 0, built: 0,
+    g: { food: 0, wood: 0, gold: 0, stone: 0 }, spent: 0, mil: 0, bldLost: 0, killVal: 0, razeVal: 0, techs: 0, techVal: 0,
+    ageT: [0], maxPop: 0, maxMil: 0, maxVil: 0, hist: [] };
+}
+function costSum(c) { let v = 0; for (const k in c || {}) v += c[k]; return v; }
+// Punkte wie in AoE: Militär (Wert getöteter Einheiten und zerstörter Gebäude), Wirtschaft (gesammelt), Technik (Forschung und Zeitalter)
+function scoreOf(p) {
+  const s = p.stats;
+  const mil = Math.floor((s.killVal + s.razeVal) / 10), eco = Math.floor(s.gathered / 10), tech = Math.floor(s.techVal / 10) + p.age * 100;
+  return { mil, eco, tech, total: mil + eco + tech };
+}
+// Höchstwerte und Verlauf (Punkte, Bevölkerung, Militär) mitschreiben
+function countArmies() {
+  const vil = G.players.map(() => 0), mil = G.players.map(() => 0);
+  const add = u => { if (u.dead || u.owner >= GAIA) return; if (u.def.military) mil[u.owner]++; else if (u.type === 'villager') vil[u.owner]++; };
+  for (const u of G.units) if (!u.inside) add(u);
+  for (const b of G.buildings) if (!b.dead && b.gar) for (const u of b.gar) add(u);
+  return { vil, mil };
+}
+function sampleStats() {
+  const { vil, mil } = countArmies();
+  const hist = G.tick % HIST_EVERY === 0;
+  for (const p of G.players) {
+    const s = p.stats;
+    s.maxPop = Math.max(s.maxPop, p.pop); s.maxMil = Math.max(s.maxMil, mil[p.id]); s.maxVil = Math.max(s.maxVil, vil[p.id]);
+    if (hist && !p.defeated) s.hist.push([Math.round(G.time), scoreOf(p).total, p.pop, mil[p.id]]);
+  }
 }
 // Spielstände ohne Zeitalter (ältere Version) auf den aktuellen Stand bringen
 function migrateGame(g) {
@@ -2532,6 +2602,10 @@ function migrateGame(g) {
       if (tc) tc.capital = true;
     }
     recalcPlayer(p.id);
+    // Statistik (neu): fehlende Zähler ergänzen; Zeitpunkte früherer Zeitalter sind unbekannt
+    const ns = newStats();
+    for (const k in ns) if (p.stats[k] === undefined) p.stats[k] = ns[k];
+    for (let a = 1; a <= p.age; a++) if (p.stats.ageT[a] === undefined) p.stats.ageT[a] = -1;
   }
   for (const b of g.buildings) if (!b.gar && BUILDINGS[b.type].garrison) b.gar = []; // Posten auf Turm und Mauer (neu)
   G = prev;
@@ -2597,6 +2671,7 @@ function simStep(dt) {
   for (const ai of G.ais) aiUpdate(ai, dt);
   for (const p of G.players) if (p.trickle) p.res.gold += p.trickle * dt;
   if (G.tick % 30 === 0) landmarkHeal();
+  if (G.tick % STAT_EVERY === 0) sampleStats();
   // Einheiten, die in diesem Schritt in ein Gebäude gegangen sind, verlassen die Einheitenliste
   if (G.garDirty) { G.units = G.units.filter(u => { if (u.inside) { u.offList = true; return false; } return true; }); G.garDirty = false; }
   // Aufräumen
@@ -2630,7 +2705,7 @@ function checkVictory() {
     let blds = 0, lms = 0;
     for (const b of G.buildings) if (!b.dead && b.owner === pl.id && b.built && !BUILDINGS[b.type].wall) { blds++; if (b.capital || BUILDINGS[b.type].landmark) lms++; }
     if (blds === 0 || lms === 0) {
-      pl.defeated = true;
+      pl.defeated = true; pl.stats.defT = G.time;
       if (pls.length > 2 && pl.id !== G.human) notify(PLAYER_COLORS[pl.id].name + (G.human >= 0 && allies(pl.id, G.human) ? ' (verbündet)' : '') + ' wurde besiegt!', allies(pl.id, G.human));
     }
   }
@@ -5667,23 +5742,126 @@ function commitPlacing(shift) {
   refreshPanel(true);
 }
 
-/* ---------- Ende ---------- */
+/* ---------- Ende: Spielstatistik wie in Age of Empires ---------- */
+const END = { tab: 'sum', g: 1 };
+// Zeitalter: auf schmalen Bildschirmen nur die römische Ziffer
+const ageCell = a => `<span class="ageL">${AGES[a].name}</span><span class="ageS">${AGES[a].short}</span>`;
+const fmtAgeT = t => t === undefined ? '–' : t < 0 ? 'erreicht' : fmtTime(t);
+// Zeilen je Reiter: [Beschriftung, Wert(Spieler), Markierung: 'max' | 'min' | '' | 'sum' (fett, mit Linie) | 'grp' (Zwischenüberschrift)]
+const END_ROWS = {
+  sum: [
+    ['Punkte', p => scoreOf(p).total, 'max'], ['Militär', p => scoreOf(p).mil, 'max'], ['Wirtschaft', p => scoreOf(p).eco, 'max'], ['Technik', p => scoreOf(p).tech, 'max'],
+    ['Auf einen Blick', null, 'grp'],
+    ['Erreichtes Zeitalter', p => ageCell(p.age), ''], ['Getötete Einheiten', p => p.stats.kills, 'max'], ['Verlorene Einheiten', p => p.stats.lost, 'min'],
+    ['Gesammelte Rohstoffe', p => p.stats.gathered, 'max'], ['Erforschte Technologien', p => p.stats.techs, 'max'],
+  ],
+  mil: [
+    ['Getötete Einheiten', p => p.stats.kills, 'max'], ['Verlorene Einheiten', p => p.stats.lost, 'min'],
+    ['Zerstörte Gebäude', p => p.stats.razed, 'max'], ['Verlorene Gebäude', p => p.stats.bldLost, 'min'],
+    ['Ausgebildete Militäreinheiten', p => p.stats.mil, 'max'], ['Größtes Heer', p => p.stats.maxMil, 'max'],
+    ['Wert besiegter Feinde', p => p.stats.killVal + p.stats.razeVal, 'max'], ['Militärpunkte', p => scoreOf(p).mil, 'sum'],
+  ],
+  eco: [
+    ['Nahrung gesammelt', p => p.stats.g.food, 'max'], ['Holz gesammelt', p => p.stats.g.wood, 'max'],
+    ['Gold gesammelt', p => p.stats.g.gold, 'max'], ['Stein gesammelt', p => p.stats.g.stone, 'max'],
+    ['Gesammelt gesamt', p => p.stats.gathered, 'sum'], ['Ausgegeben', p => p.stats.spent, 'max'],
+    ['Ausgebildete Dorfbewohner', p => p.stats.trained - p.stats.mil, 'max'], ['Meiste Dorfbewohner', p => p.stats.maxVil, 'max'],
+    ['Höchste Bevölkerung', p => p.stats.maxPop, 'max'], ['Errichtete Gebäude', p => p.stats.built, 'max'],
+  ],
+  tech: [
+    ['Erreichtes Zeitalter', p => ageCell(p.age), ''],
+    ...AGES.slice(1).map((a, k) => [a.name, p => fmtAgeT(p.stats.ageT[k + 1]), '']),
+    ['Erforschte Technologien', p => p.stats.techs, 'max'], ['Technikpunkte', p => scoreOf(p).tech, 'sum'],
+  ],
+};
+function endCols() {
+  const me = Math.max(0, G.human);
+  // zuerst du, dann deine Verbündeten, dann die Gegner
+  return [me].concat(G.players.filter(p => p.id !== me && allies(p.id, me)).map(p => p.id), G.players.filter(p => !allies(p.id, me)).map(p => p.id));
+}
+function endResult(i) {
+  const o = G.over, me = Math.max(0, G.human), p = G.players[i];
+  if (o.quit && i === me) return 'Aufgegeben';
+  if (o.resign && i !== me) return 'Aufgegeben';
+  if (p.defeated) return 'Besiegt' + (p.stats.defT !== undefined ? ' ' + fmtTime(p.stats.defT) : '');
+  if (o.winner >= 0 && allies(i, o.winner)) return 'Sieger';
+  return 'Im Spiel';
+}
+function renderEndTab() {
+  const t = END.tab, cols = endCols(), me = Math.max(0, G.human);
+  document.querySelectorAll('#endTabs .etab').forEach(b => b.classList.toggle('sel', b.dataset.t === t));
+  $('endStatWrap').classList.toggle('hidden', t === 'graph');
+  $('endGraph').classList.toggle('hidden', t !== 'graph');
+  if (t === 'graph') { drawEndChart(); return; }
+  const name = i => i === me ? 'Du' : G.net ? 'Gegner' : PLAYER_COLORS[i].name;
+  const teams = new Set(G.players.map(p => p.team)).size > 2 || G.players.length > 2;
+  const head = `<tr><th></th>${cols.map(i => `<th><span class="sw" style="background:${PLAYER_COLORS[i].main}"></span>${name(i)}<small>${endResult(i)}</small>${teams ? '<small>Team ' + (G.players[i].team + 1) + '</small>' : ''}</th>`).join('')}</tr>`;
+  const body = END_ROWS[t].map(([label, f, mark]) => {
+    if (mark === 'grp') return `<tr class="grp"><td colspan="${cols.length + 1}">${label}</td></tr>`;
+    const v = cols.map(i => { const x = f(G.players[i]); return typeof x === 'number' ? Math.floor(x) : x; });
+    const nums = v.filter(x => typeof x === 'number');
+    const best = cols.length > 1 && nums.length && (mark === 'max' || mark === 'min') ? (mark === 'max' ? Math.max(...nums) : Math.min(...nums)) : null;
+    const uniq = best !== null && nums.filter(x => x === best).length < nums.length && (mark === 'min' || best > 0);
+    return `<tr${mark === 'sum' ? ' class="sum"' : ''}><td>${label}</td>${v.map(x => `<td${uniq && x === best ? ' class="best"' : ''}>${typeof x === 'number' ? x.toLocaleString('de-DE') : x}</td>`).join('')}</tr>`;
+  }).join('');
+  $('endStats').innerHTML = head + body;
+}
+// Verlauf als Liniengrafik: g = 1 Punkte, 2 Bevölkerung, 3 Militär; Zeitalter-Aufstiege als Marken
+function drawEndChart() {
+  document.querySelectorAll('#graphSel .etab').forEach(b => b.classList.toggle('sel', +b.dataset.g === END.g));
+  const cv = $('endChart'), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const cols = endCols(), counts = countArmies(), g = END.g;
+  const series = cols.map(i => {
+    const p = G.players[i], pts = [[0, 0, 6, 0]].concat(p.stats.hist);
+    const end = p.defeated && p.stats.defT !== undefined ? p.stats.defT : G.over.time;
+    if (!pts.length || pts[pts.length - 1][0] < end) pts.push([end, scoreOf(p).total, p.pop, counts.mil[i]]);
+    return { i, pts };
+  });
+  const T = Math.max(60, G.over.time);
+  let M = 1; for (const s of series) for (const q of s.pts) M = Math.max(M, q[g]);
+  const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000].find(v => M / v <= 5) || 20000;
+  M = Math.ceil(M / step) * step;
+  ctx.font = '11px Georgia, serif';
+  const L = 10 + ctx.measureText(M.toLocaleString('de-DE')).width, R = 10, Tp = 8, B = 22, w = W - L - R, h = H - Tp - B;
+  const X = t => L + t / T * w, Y = v => Tp + h - v / M * h;
+  ctx.strokeStyle = 'rgba(120,80,30,.25)'; ctx.fillStyle = '#6b4a2b'; ctx.lineWidth = 1;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = 0; v <= M; v += step) { ctx.beginPath(); ctx.moveTo(L, Y(v) + .5); ctx.lineTo(L + w, Y(v) + .5); ctx.stroke(); ctx.fillText(v.toLocaleString('de-DE'), L - 5, Y(v)); }
+  const tStep = [60, 120, 300, 600, 900, 1200, 1800, 3600].find(v => T / v <= Math.max(3, w / 70)) || 7200;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let t = 0; t <= T; t += tStep) ctx.fillText(fmtTime(t), clamp(X(t), L + 14, L + w - 14), Tp + h + 6);
+  ctx.lineJoin = 'round';
+  for (const s of series) {
+    ctx.strokeStyle = PLAYER_COLORS[s.i].main; ctx.lineWidth = s.i === cols[0] ? 2.6 : 1.8;
+    ctx.beginPath(); s.pts.forEach((q, k) => k ? ctx.lineTo(X(q[0]), Y(q[g])) : ctx.moveTo(X(q[0]), Y(q[g]))); ctx.stroke();
+    // Zeitalter-Aufstiege: Punkt mit römischer Ziffer auf der Linie
+    const at = G.players[s.i].stats.ageT;
+    for (let a = 1; a < at.length; a++) {
+      if (!(at[a] >= 0)) continue;
+      let v = 0; for (const q of s.pts) { if (q[0] > at[a]) break; v = q[g]; }
+      const x = X(at[a]), y = Y(v);
+      ctx.fillStyle = PLAYER_COLORS[s.i].main; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(AGES[a].short, x, y + .5);
+    }
+  }
+  const me = Math.max(0, G.human);
+  $('chartLegend').innerHTML = cols.map(i => `<span style="--c:${PLAYER_COLORS[i].main}">${i === me ? 'Du' : G.net ? 'Gegner' : PLAYER_COLORS[i].name}</span>`).join('') + '<span style="--c:transparent">● II/III/IV = Zeitalter</span>';
+}
 function showEnd() {
   const o = G.over; const win = o.winner === G.human;
-  $('endTitle').textContent = o.lost ? 'Verbindung getrennt' : win ? 'Sieg!' : 'Niederlage';
-  $('endTitle').style.color = o.lost ? '#5a2a14' : win ? '#2d6a1f' : '#7a1d16';
-  const why = o.lost ? 'Die Verbindung zum Mitspieler ist abgebrochen.' : o.resign ? 'Dein Mitspieler hat aufgegeben.'
+  $('endTitle').textContent = o.quit ? 'Aufgegeben' : o.lost ? 'Verbindung getrennt' : win ? 'Sieg!' : 'Niederlage';
+  $('endTitle').style.color = o.quit || o.lost ? '#5a2a14' : win ? '#2d6a1f' : '#7a1d16';
+  const why = o.quit ? 'Du hast das Spiel aufgegeben.' : o.lost ? 'Die Verbindung zum Mitspieler ist abgebrochen.' : o.resign ? 'Dein Mitspieler hat aufgegeben.'
     : win ? (G.players.length > 2 ? 'Alle gegnerischen Siedlungen sind gefallen.' : 'Die gegnerische Siedlung ist gefallen.')
     : G.players[Math.max(0, G.human)].defeated ? 'Deine Siedlung wurde zerstört.' : 'Dein Team wurde besiegt.';
   $('endSub').textContent = why + ' Spielzeit ' + fmtTime(o.time) + ' · ' + (G.net ? 'Mehrspieler' : DIFFS[G.diff].name) + ' · ' + MAPS[G.map].name;
-  // Spalten: zuerst der eigene Spieler
-  const me = Math.max(0, G.human);
-  const cols = [me].concat(G.players.map(p => p.id).filter(i => i !== me));
-  const head = i => i === me ? 'Du' : G.net ? 'Gegner' : G.players.length > 2 ? PLAYER_COLORS[i].name + (allies(i, me) ? ' (Team)' : '') : 'KI';
-  const rows = [['Gesammelte Ressourcen', 'gathered'], ['Ausgebildete Einheiten', 'trained'], ['Errichtete Gebäude', 'built'], ['Getötete Feinde', 'kills'], ['Verlorene Einheiten', 'lost'], ['Zerstörte Gebäude', 'razed']];
-  $('endStats').innerHTML = `<tr><th></th>${cols.map(i => `<th style="color:${PLAYER_COLORS[i].main}">${head(i)}</th>`).join('')}</tr>` + rows.map(r => `<tr><td>${r[0]}</td>${cols.map(i => `<td>${Math.floor(G.players[i].stats[r[1]])}</td>`).join('')}</tr>`).join('');
+  END.tab = 'sum';
   $('btnRestartSame').classList.toggle('hidden', !!G.net);
   $('endScreen').classList.remove('hidden');
+  renderEndTab();
 }
 
 /* ============================ 11. EINGABE ============================ */
@@ -6108,7 +6286,16 @@ function setupInput() {
   $('btnPause').addEventListener('click', () => togglePause());
   $('btnMenu').addEventListener('click', () => { if (!paused) togglePause(); });
   $('btnResume').addEventListener('click', () => { togglePause(); tryFullscreen(); });
-  $('btnQuit').addEventListener('click', () => { if (G && G.net) deleteMPSave(); running = false; paused = false; $('pauseScreen').classList.add('hidden'); netClose(true); showMenu(); });
+  $('btnQuit').addEventListener('click', () => {
+    if (G && G.net) deleteMPSave();
+    paused = false; $('pauseScreen').classList.add('hidden'); netClose(true);
+    // Aufgeben zeigt wie am Spielende die Statistik; der letzte automatische Spielstand bleibt erhalten
+    if (running && G && !G.over) { G.over = { winner: -1, quit: true, time: G.time }; showEnd(); }
+    else { running = false; showMenu(); }
+  });
+  document.querySelectorAll('#endTabs .etab').forEach(b => b.addEventListener('click', () => { END.tab = b.dataset.t; renderEndTab(); }));
+  document.querySelectorAll('#graphSel .etab').forEach(b => b.addEventListener('click', () => { END.g = +b.dataset.g; drawEndChart(); }));
+  window.addEventListener('resize', () => { if (G && G.over && END.tab === 'graph' && !$('endScreen').classList.contains('hidden')) drawEndChart(); });
   $('btnSaveLater').addEventListener('click', () => netSaveLater(false));
   $('btnNetLostQuit').addEventListener('click', () => { netSaveMP(); running = false; paused = false; netClose(false); showMenu(); });
   document.querySelectorAll('.diff').forEach(b => b.addEventListener('click', () => {

@@ -123,7 +123,13 @@ const summary = worlds.map(w => ({
   garrisoned: w.G.buildings.reduce((n, b) => n + (b.dead || !b.gar ? 0 : b.gar.length), 0), rotated: w.G.buildings.filter(b => b.rot === 1).length, stalls: w.stalls, desync: w.L.desync, over: w.G.over,
 }));
 console.log(JSON.stringify({ cmdsSent, hashes, summary }, null, 1));
-const ok = hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick
+// Spielstatistik (Endbildschirm) muss auf beiden Rechnern gleich sein und den Verlauf mitschreiben
+const statsJson = worlds.map(w => JSON.stringify(w.G.players.map(p => p.stats)));
+const st = worlds[0].G.players[0].stats;
+console.log('Statistik Spieler 1:', JSON.stringify({ ...st, hist: st.hist.length + ' Punkte' }));
+const statsOk = statsJson[0] === statsJson[1] && st.hist.length > 0 && st.gathered > 0 && st.g.food + st.g.wood + st.g.gold + st.g.stone === st.gathered;
+if (!statsOk) console.log('FEHLER: Statistik weicht ab oder fehlt');
+const ok = statsOk && hashes[0] === hashes[1] && worlds.every(w => w.L.desync < 0) && summary[0].tick === summary[1].tick
   && summary[0].rotated > 0 && summary[0].rotated === summary[1].rotated;
 console.log(ok ? 'OK: beide Simulationen identisch' : 'FEHLER: Simulationen weichen ab');
 process.exit(ok ? 0 : 1);

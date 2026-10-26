@@ -6650,6 +6650,7 @@ function showMPScreen() {
   $('mpVersion').textContent = 'Version ' + GAME_VERSION + (METERED_USER ? ' · Relay eingebaut' : '') + ' · Relay-Verbrauch dieses Geräts im Monat: ' + fmtBytes(relayUsage().bytes);
   $('startScreen').classList.add('hidden'); $('mpScreen').classList.remove('hidden'); $('mpLobby').classList.add('hidden');
   mpStatus(''); $('mpPing').textContent = ''; renderMPResume();
+  if (!NET.peer) setMPBusy(false); // nach einem beendeten Spiel sind Erstellen/Beitreten wieder frei
   const m = /(?:^|[#&])join=([A-Za-z0-9]{6})/.exec(location.hash);
   if (m) $('joinCode').value = m[1].toUpperCase();
 }

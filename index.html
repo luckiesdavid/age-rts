@@ -6404,9 +6404,10 @@ function setDifficulty(diff) {
 }
 function updateDiffUI() {
   if (!G) return;
-  $('btnDiff').textContent = 'Gegner: ' + DIFFS[G.diff].name;
-  $('btnDiff').classList.toggle('hidden', !!G.net);
-  $('diffLabel').textContent = (G.net ? 'Mehrspieler' : 'Gegner: ' + DIFFS[G.diff].name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
+  const d = DIFFS[G.diff]; // im Mehrspieler gibt es keine Schwierigkeit (G.diff fehlt)
+  $('btnDiff').textContent = d ? 'Gegner: ' + d.name : '';
+  $('btnDiff').classList.toggle('hidden', !!G.net || !d);
+  $('diffLabel').textContent = (G.net || !d ? 'Mehrspieler' : 'Gegner: ' + d.name) + ' · Karte: ' + MAPS[G.map].name + ' · Seed ' + G.seed;
   $('diffLabel').title = $('diffLabel').textContent;
 }
 
@@ -6635,9 +6636,12 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // Öffentliche Adresse des Spiels (GitHub Pages) für Einladungslinks, wenn die Datei lokal geöffnet wurde
 const PUBLIC_URL = 'https://luckiesdavid.github.io/age-rts/';
 const NET = { peer: null, conn: null, role: null, me: 0, ls: null, code: '', ping: 0, pingT: null, stallT: 0, desyncShown: false, ready: false,
-  lastRecv: 0, recon: null, reconT: null, resume: null, rx: null, early: [] };
+  lastRecv: 0, recon: null, reconT: null, resume: null, rx: null, early: [], join: null };
 const NET_TIMEOUT = 5000;  // so lange (ms) ohne Nachricht gilt die Verbindung als abgebrochen
 const NET_RETRY = 2500;    // Abstand (ms) zwischen Wiederverbindungsversuchen
+const JOIN_ANSWER_MS = 8000;  // Beitreten: so lange auf die Antwort des Erstellers warten, dann erneut anklopfen
+const JOIN_ICE_MS = 20000;    // Beitreten: so lange einen Verbindungsweg suchen, nachdem der Ersteller geantwortet hat
+const JOIN_TOTAL_MS = 45000;  // Beitreten: so lange insgesamt erneut versuchen
 const MP_SAVE_EVERY = 30;  // Sekunden Spielzeit zwischen Zwischenständen
 const ST_CHUNK = 7000;     // Spielstand in Stücken übertragen (PeerJS erlaubt je Nachricht knapp 16 KB, Anführungszeichen werden maskiert)
 
@@ -6771,7 +6775,7 @@ function netSend(msg) { if (NET.conn && NET.conn.open) NET.conn.send(msg); }
 function netClose(sayBye) {
   if (sayBye) netSend({ k: sayBye === true ? 'bye' : sayBye });
   clearInterval(NET.pingT); NET.pingT = null;
-  netStopRecon();
+  netStopRecon(); netStopJoin();
   const peer = NET.peer, conn = NET.conn;
   NET.peer = null; NET.conn = null; NET.ls = null; NET.role = null; NET.ready = false; NET.resume = null; NET.rx = null; NET.early = [];
   // kurz warten, damit die letzte Nachricht noch rausgeht
@@ -6802,6 +6806,11 @@ function netGuestPeer(onOpen, onFail) {
   peer.on('error', e => { if (peer === NET.peer && onFail) onFail(e); });
 }
 // Verbindung zum Vermittlungsserver verloren: wieder anmelden (die direkte Verbindung zum Mitspieler ist davon unabhängig)
+// Am Handy schläft die Seite im Hintergrund ein: beim Zurückkehren sofort wieder beim Vermittlungsserver anmelden
+document.addEventListener('visibilitychange', () => {
+  const peer = NET.peer;
+  if (!document.hidden && peer && peer.disconnected && !peer.destroyed) try { peer.reconnect(); } catch (e) {}
+});
 function netPeerDisconnected(peer) {
   setTimeout(() => { if (peer === NET.peer && peer.disconnected && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }, 1000);
 }
@@ -6848,24 +6857,80 @@ async function netJoin() {
   await netLoadIce();
   NET.role = 'guest'; NET.me = 1; NET.code = code; NET.lastErr = null;
   netGuestPeer(() => {
+    if (NET.join) return; // Vermittlungsserver nach kurzer Trennung wieder verbunden: Beitreten läuft schon
     mpStatus('Trete Spiel ' + code + ' bei …');
-    const conn = NET.peer.connect(NET_PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
-    netAttach(conn);
-    // Scheitert der Verbindungsaufbau (ICE „failed“) oder dauert er zu lange: Netzwerktest zeigen
-    const t0 = performance.now();
-    const watch = setInterval(() => {
-      if (NET.conn !== conn || conn.open) { clearInterval(watch); return; }
-      const pc = conn.peerConnection, st = pc && pc.iceConnectionState;
-      if (st === 'failed' || performance.now() - t0 > 20000) {
-        clearInterval(watch); setMPBusy(false);
-        netShowTest('Keine Verbindung zum Ersteller möglich. Eure Netzwerke lassen keine direkte Verbindung zu, und über einen Relay-Server klappte es auch nicht.');
-        try { conn.close(); } catch (e) {}
-      } else if (st === 'checking') mpStatus('Verbindungsweg wird gesucht …');
-    }, 500);
-  }, e => { if (NET.recon || (running && G && G.net)) return; mpStatus(netErrorText(e), true); setMPBusy(false); });
+    NET.join = { code, t0: performance.now(), connT: 0, tries: 0, unavail: 0, busy: false, timer: setInterval(netJoinTick, 500) };
+    netJoinConnect();
+  }, e => {
+    if (NET.join && e.type === 'peer-unavailable') { NET.join.unavail = performance.now(); return; } // erneut versuchen (netJoinTick)
+    if (NET.recon || (running && G && G.net)) return; netStopJoin(); mpStatus(netErrorText(e), true); setMPBusy(false);
+  });
+}
+/* Beitreten: Der Gast klopft beim Ersteller an. Antwortet der nicht (Seite am Handy im Hintergrund, Vermittlungsserver
+   hat die Nachricht verloren) oder ist der Code gerade nicht angemeldet, wird es bis JOIN_TOTAL_MS lang erneut versucht.
+   Scheitert es endgültig, sagt die Meldung, woran es lag: keine Antwort, kein Relay beim Ersteller oder kein Weg. */
+function netJoinConnect() {
+  const J = NET.join; if (!J || !NET.peer || !NET.peer.open) return;
+  const old = NET.conn; NET.conn = null; // alte Verbindung erst abhängen, damit ihr Schließen nicht als Abbruch zählt
+  const conn = NET.peer.connect(NET_PREFIX + J.code.toLowerCase(), { reliable: true, serialization: 'json' });
+  netAttach(conn);
+  if (old && old !== conn) try { old.close(); } catch (e) {}
+  J.connT = performance.now(); J.tries++; J.unavail = 0;
+}
+function netStopJoin() { if (NET.join) { clearInterval(NET.join.timer); NET.join = null; } }
+function netJoinTick() {
+  const J = NET.join; if (!J || J.busy) return;
+  const conn = NET.conn;
+  if (conn && conn.open) { netStopJoin(); return; }
+  const now = performance.now(), pc = conn && conn.peerConnection, st = pc ? pc.iceConnectionState : 'new';
+  const answered = !!(pc && pc.remoteDescription), late = now - J.t0 > JOIN_TOTAL_MS;
+  const retry = !conn || (J.unavail && now - J.unavail > 2500) || st === 'failed'
+    || (!answered && now - J.connT > JOIN_ANSWER_MS) || now - J.connT > JOIN_ICE_MS;
+  if (!retry) {
+    if (answered && st === 'checking') mpStatus('Verbindungsweg wird gesucht …');
+    else if (J.unavail) mpStatus('Kein Spiel mit diesem Code angemeldet – versuche es weiter …');
+    return;
+  }
+  if (!late) {
+    if (!(answered && st === 'checking')) mpStatus(J.unavail ? 'Kein Spiel mit diesem Code angemeldet – versuche es weiter …'
+      : answered ? 'Kein Verbindungsweg gefunden – versuche es erneut …' : 'Der Ersteller antwortet nicht – klopfe erneut an …');
+    netJoinConnect(); return;
+  }
+  // endgültig gescheitert: Ursache ermitteln
+  J.busy = true;
+  netJoinDiagnose(pc).then(d => {
+    if (NET.join !== J) return;
+    netStopJoin(); setMPBusy(false);
+    const lastErr = NET.lastErr; NET.conn = null;
+    try { conn && conn.close(); } catch (e) {}
+    if (J.unavail) { mpStatus(netErrorText({ type: 'peer-unavailable' }), true); return; }
+    if (!answered) {
+      mpStatus('Der Ersteller antwortet nicht. Ist das Spiel bei ihm noch geöffnet? Am Handy muss die Seite dabei im Vordergrund bleiben – '
+        + 'wechselt man in eine andere App (z. B. um den Code zu verschicken), schläft sie ein. Danach einfach noch einmal auf <b>Beitreten</b> drücken.', true);
+      return;
+    }
+    const why = !d.remote.relay
+      ? 'Beim Ersteller ist kein Relay-Server erreichbar' + (d.remote.any ? '' : ' (er hat gar keine Verbindungswege geschickt)')
+        + '. Er sollte die Seite neu laden und unter „Verbindungsprobleme?“ den Netzwerktest machen.'
+      : 'Eure Netzwerke lassen keine direkte Verbindung zu, und über den Relay-Server klappte es auch nicht.';
+    netShowTest('Keine Verbindung zum Ersteller möglich. ' + why + ' <small>(ICE: ' + st + (lastErr ? ', ' + (lastErr.type || lastErr.message) : '')
+      + ', Ersteller: lokal ' + (d.remote.host ? '✓' : '✗') + ' · STUN ' + (d.remote.srflx ? '✓' : '✗') + ' · Relay ' + (d.remote.relay ? '✓' : '✗') + ')</small>');
+  });
+}
+// Welche Verbindungswege hat der Ersteller geschickt? (aus der Antwort und den nachgereichten Kandidaten)
+async function netJoinDiagnose(pc) {
+  const remote = { host: false, srflx: false, relay: false, any: false };
+  const add = t => { if (t) { remote.any = true; remote[t === 'prflx' ? 'srflx' : t] = true; } };
+  try { const sdp = pc && pc.remoteDescription && pc.remoteDescription.sdp; if (sdp) for (const m of sdp.matchAll(/ typ (host|srflx|prflx|relay)/g)) add(m[1]); } catch (e) {}
+  try { if (pc && pc.getStats) (await pc.getStats()).forEach(r => { if (r.type === 'remote-candidate') add(r.candidateType); }); } catch (e) {}
+  return { remote };
 }
 function netIncoming(conn) {
   // Im laufenden Spiel darf sich der bisherige Mitspieler jederzeit neu verbinden (geprüft im 'hello'), sonst ist das Spiel voll
+  // Lobby: Eine noch nie geöffnete Verbindung (z. B. ein liegengebliebener Versuch des Gastes) wird durch die neue ersetzt
+  if (NET.conn && !NET.conn.open && !NET.conn.everOpen && !(running && G && G.net)) {
+    const old = NET.conn; NET.conn = null; netAttach(conn); try { old.close(); } catch (e) {} return;
+  }
   if (NET.conn && !(running && G && G.net)) { conn.on('open', () => { conn.send({ k: 'full' }); setTimeout(() => conn.close(), 500); }); return; }
   netAttach(conn);
 }
@@ -6935,6 +7000,7 @@ function netStartPing() {
   netSend({ k: 'ping', ts: performance.now() });
 }
 function netLost(conn) {
+  if (NET.join && conn && !conn.everOpen && NET.role === 'guest' && !running) { NET.conn = null; return; } // Beitreten versucht es erneut
   // Gast: Verbindungsaufbau ist gescheitert, bevor die Verbindung je offen war (meist NAT/Firewall)
   const neverOpened = conn && !conn.everOpen && NET.role === 'guest' && !running;
   const st = conn && conn.peerConnection ? conn.peerConnection.iceConnectionState : '?';

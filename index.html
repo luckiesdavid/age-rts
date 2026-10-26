@@ -117,6 +117,28 @@ html, body {
   font-size: 15px; transition: opacity .5s; }
 #msgs div.warn { color: #ffb0a0; border-color: #a5463a; }
 #msgs div.go { pointer-events: auto; cursor: pointer; }
+/* Chat im Mehrspieler: Verlauf links über der unteren Leiste, verblasst nach einigen Sekunden */
+#chat { position: fixed; left: calc(12px + var(--safeL)); bottom: calc(var(--botH) + var(--safeB) + 12px); width: min(420px, calc(100vw - 24px)); z-index: 31; pointer-events: none; } /* über dem Pausenmenü */
+#chatLog { max-height: 34vh; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; }
+#chatLog div { background: rgba(20,14,8,.78); border-left: 3px solid #6b4f31; padding: 3px 9px; border-radius: 2px; font-size: 14px; color: #f3e0b6;
+  text-shadow: 0 1px 1px #000; overflow-wrap: anywhere; transition: opacity .6s; }
+#chatLog div.old { opacity: 0; }
+#chatLog div.sys { font-style: italic; opacity: .85; }
+#chatLog div.sys.old { opacity: 0; }
+#chatLog b { margin-right: 6px; }
+#chat.open { pointer-events: auto; }
+#chat.open #chatLog { overflow-y: auto; }
+#chat.open #chatLog div, #chat.open #chatLog div.old { opacity: 1; }
+#chatForm { display: flex; gap: 6px; margin-top: 5px; }
+#chatIn { flex: 1; min-width: 0; font: inherit; font-size: 15px; padding: 5px 8px; background: rgba(20,14,8,.92); color: #f3e0b6; border: 1px solid #c9a24f; border-radius: 3px; outline: none; }
+#btnChat .ci { display: none; }
+@media (max-width: 600px) { #btnChat .cl { display: none; } #btnChat .ci { display: inline; } #btnChat { padding-left: 7px; padding-right: 7px; } }
+#btnChat .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ffcf5a; margin-left: 5px; vertical-align: middle; }
+/* auf dem Handy oben rechts (unter der Bauleiste), damit die Bildschirmtastatur die Eingabe nicht verdeckt */
+body.touch #chat { left: auto; right: calc(8px + var(--safeR)); bottom: auto; top: calc(var(--topH) + 56px); width: min(320px, calc(100vw - 150px)); display: flex; flex-direction: column-reverse; }
+body.touch #chatForm { margin: 0 0 5px; }
+body.touch #chatIn { font-size: 16px; } /* iOS zoomt bei kleinerer Schrift beim Antippen hinein */
+body.touch #chatLog { max-height: 28vh; }
 
 #fps { position: fixed; right: calc(8px + var(--safeR)); top: calc(var(--topH) + 6px); z-index: 6; font: 11px monospace; color: #cbb; opacity: .6; pointer-events: none; }
 
@@ -472,6 +494,7 @@ body.touch .touchKeys { display: block; }
   <div id="topRight">
     <span id="diffLabel"></span>
     <span id="clock">00:00</span>
+    <button class="tbtn hidden" id="btnChat" title="Chat mit deinem Mitspieler (Enter)">Chat</button>
     <button class="tbtn" id="btnPause">Pause (P)</button>
     <button class="tbtn" id="btnMenu">Menü</button>
   </div>
@@ -494,6 +517,7 @@ body.touch .touchKeys { display: block; }
 
 <div id="tooltip" class="hidden"></div>
 <div id="msgs"></div>
+<div id="chat" class="hidden"><div id="chatLog"></div><form id="chatForm" class="hidden" autocomplete="off"><input id="chatIn" maxlength="120" enterkeyhint="send" placeholder="Nachricht … (Enter senden, Esc schließen)"><button type="submit" class="tbtn">Senden</button></form></div>
 <div id="fps"></div>
 
 <div id="startScreen" class="screen scene">
@@ -657,6 +681,7 @@ body.touch .touchKeys { display: block; }
     <h2 id="pauseBy">Leertaste oder P zum Fortsetzen</h2>
     <div class="menuList">
       <button class="bigbtn" id="btnResume">Fortsetzen</button>
+      <button class="bigbtn alt hidden" id="btnPauseChat">Chat</button>
       <button class="bigbtn alt" id="btnSaveMenu">Speichern</button>
       <button class="bigbtn alt" id="btnLoadMenu">Laden</button>
       <button class="bigbtn alt" id="btnSound"></button>
@@ -5851,6 +5876,7 @@ function drawEndChart() {
   $('chartLegend').innerHTML = cols.map(i => `<span style="--c:${PLAYER_COLORS[i].main}">${i === me ? 'Du' : G.net ? 'Gegner' : PLAYER_COLORS[i].name}</span>`).join('') + '<span style="--c:transparent">● II/III/IV = Zeitalter</span>';
 }
 function showEnd() {
+  chatReset(false);
   const o = G.over; const win = o.winner === G.human;
   $('endTitle').textContent = o.quit ? 'Aufgegeben' : o.lost ? 'Verbindung getrennt' : win ? 'Sieg!' : 'Niederlage';
   $('endTitle').style.color = o.quit || o.lost ? '#5a2a14' : win ? '#2d6a1f' : '#7a1d16';
@@ -6230,11 +6256,13 @@ function setupInput() {
 
   window.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
+    if (e.target && e.target.id === 'chatIn') { if (k === 'escape') { e.preventDefault(); chatClose(); } return; } // Enter schickt das Formular ab
     if (e.target && e.target.tagName === 'INPUT') { if (k === 'enter') { if (e.target.id === 'joinCode') netJoin(); else if (e.target.id === 'mpSeed') netStartAsHost(); else startGameFromMenu(); } return; }
     if (!$('saveScreen').classList.contains('hidden')) { if (k === 'escape') closeSaveScreen(); return; }
     if (!running) return;
     if (k === 'f5' || ((e.ctrlKey || e.metaKey) && k === 's')) { e.preventDefault(); if (G.net) return; openSaveScreen('save'); if (!paused) togglePause(); return; }
     if (k === ' ' || k === 'p') { e.preventDefault(); togglePause(); return; }
+    if (k === 'enter' && G.net && !G.over) { e.preventDefault(); chatOpen(); return; } // auch in der Pause
     if (paused) return;
     INPUT.keys.add(k);
     if (k === 'escape') { escapeAction(); return; }
@@ -6284,6 +6312,9 @@ function setupInput() {
 
   // Buttons
   $('btnPause').addEventListener('click', () => togglePause());
+  $('btnChat').addEventListener('click', () => { if (CHAT.open) chatClose(); else chatOpen(); });
+  $('btnPauseChat').addEventListener('click', () => chatOpen());
+  $('chatForm').addEventListener('submit', e => { e.preventDefault(); chatSend(); });
   $('btnMenu').addEventListener('click', () => { if (!paused) togglePause(); });
   $('btnResume').addEventListener('click', () => { togglePause(); tryFullscreen(); });
   $('btnQuit').addEventListener('click', () => {
@@ -6983,6 +7014,80 @@ function netUpdateLabel() {
   $('diffLabel').textContent = 'Mehrspieler · Ping ' + NET.ping + ' ms' + net + ' · v' + GAME_VERSION;
   $('diffLabel').title = 'Seed ' + G.seed + ' · Relay-Verbrauch dieses Geräts im ' + relayUsage().month + ': ' + fmtBytes(relayUsage().bytes);
 }
+
+/* ---------- Chat im Mehrspieler ----------
+   Läuft neben dem Lockstep als eigene Nachricht { k: 'chat', x }, berührt also den Spielzustand nicht.
+   Text nur über textContent einfügen; Länge und Häufigkeit sind in beide Richtungen begrenzt. */
+const CHAT_MAX = 120, CHAT_KEEP = 40, CHAT_FADE = 12000;
+const CHAT = { open: false, sent: [], recv: [], unread: false };
+function chatClean(t) { return String(t == null ? '' : t).replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX); }
+// höchstens n Zeitstempel innerhalb von ms behalten; false, wenn das Limit erreicht ist
+function chatRate(list, n, ms) { const now = performance.now(); while (list.length && now - list[0] > ms) list.shift(); if (list.length >= n) return false; list.push(now); return true; }
+function chatReset(on) {
+  CHAT.open = false; CHAT.sent = []; CHAT.recv = []; CHAT.unread = false;
+  $('chatLog').innerHTML = ''; $('chatIn').value = '';
+  $('chat').classList.add('hidden'); $('chat').classList.remove('open'); $('chatForm').classList.add('hidden');
+  $('btnChat').classList.toggle('hidden', !on); $('btnPauseChat').classList.toggle('hidden', !on); chatBadge();
+}
+function chatBadge() { $('btnChat').innerHTML = '<span class="cl">Chat</span><span class="ci">💬</span>' + (CHAT.unread ? '<span class="dot"></span>' : ''); }
+function chatLine(who, text) {
+  const log = $('chatLog'), d = document.createElement('div');
+  if (who < 0) { d.className = 'sys'; d.textContent = text; }
+  else {
+    const c = PLAYER_COLORS[who] || PLAYER_COLORS[0], b = document.createElement('b');
+    b.textContent = who === G.human ? 'Du:' : c.name + ':'; b.style.color = c.light; d.style.borderLeftColor = c.main;
+    d.appendChild(b); d.appendChild(document.createTextNode(text));
+  }
+  log.appendChild(d);
+  while (log.children.length > CHAT_KEEP) log.firstChild.remove();
+  log.scrollTop = log.scrollHeight;
+  $('chat').classList.remove('hidden');
+  setTimeout(() => d.classList.add('old'), CHAT_FADE);
+}
+function chatOpen() {
+  if (!running || !G || !G.net || G.over) return;
+  CHAT.open = true; CHAT.unread = false; chatBadge();
+  INPUT.keys.clear(); // sonst scrollt die Kamera mit einer gerade gedrückten Pfeiltaste weiter
+  $('chat').classList.remove('hidden'); $('chat').classList.add('open'); $('chatForm').classList.remove('hidden');
+  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+  $('chatIn').placeholder = IS_TOUCH ? 'Nachricht …' : 'Nachricht … (Enter senden, Esc schließen)';
+  $('chatIn').focus();
+}
+function chatClose() {
+  CHAT.open = false;
+  $('chat').classList.remove('open'); $('chatForm').classList.add('hidden'); $('chatIn').blur();
+  if (!$('chatLog').children.length) $('chat').classList.add('hidden');
+}
+function chatSend() {
+  const text = chatClean($('chatIn').value);
+  if (!text) { chatClose(); return; }
+  if (!NET.conn || !NET.conn.open) { chatLine(-1, 'Nicht verbunden – die Nachricht wurde nicht gesendet.'); return; }
+  if (!chatRate(CHAT.sent, 4, 5000)) { chatLine(-1, 'Langsam – höchstens 4 Nachrichten in 5 Sekunden.'); return; }
+  netSend({ k: 'chat', x: text });
+  chatLine(G.human, text);
+  $('chatIn').value = '';
+  chatClose();
+}
+function chatReceive(m) {
+  if (!running || !G || !G.net) return;
+  const text = chatClean(m.x);
+  if (!text || !chatRate(CHAT.recv, 6, 5000)) return; // Flut vom Mitspieler verwerfen
+  chatLine(1 - G.human, text);
+  if (!CHAT.open) { CHAT.unread = true; chatBadge(); }
+  chatPing();
+}
+// leiser Zweiklang bei eingehender Nachricht (nur bei „Ton: alles an“)
+function chatPing() {
+  const ac = SND.ctx;
+  if (SND.mode !== 'all' || !ac || ac.state !== 'running' || document.hidden) return;
+  const t0 = ac.currentTime + 0.02;
+  [[0, 880], [0.09, 1320]].forEach(([at, f]) => {
+    const o = ac.createOscillator(), g = ac.createGain(), s = t0 + at;
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.12, s + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, s + 0.25);
+    o.connect(g); g.connect(ac.destination); o.start(s); o.stop(s + 0.3);
+  });
+}
 function netHello() {
   const live = !!(running && G && G.net && !G.over && NET.ls), save = mpSaveMeta();
   return { k: 'hello', v: NET_PROTO, live, gid: live ? G.gid : null, tick: live ? G.tick : 0, turn: live ? NET.ls.turn : 0, e: live ? NET.ls.e : 0,
@@ -7173,6 +7278,7 @@ function netOnData(m) {
       if (running && G && G.net && !G.over) { deleteMPSave(); G.over = { winner: G.human, resign: true, time: G.time }; netClose(false); showEnd(); }
       else { netClose(false); mpStatus('Dein Mitspieler hat das Spiel verlassen.', true); $('mpLobby').classList.add('hidden'); setMPBusy(false); }
       break;
+    case 'chat': chatReceive(m); break;
     case 'full': mpStatus('Dieses Spiel ist bereits voll.', true); netClose(false); setMPBusy(false); break;
   }
 }
@@ -7394,6 +7500,7 @@ let lastFrame = 0, acc = 0, fpsT = 0, fpsN = 0;
 function showMenu() {
   running = false;
   $('msgs').innerHTML = '';
+  chatReset(false);
   updateMenuButtons();
   $('startScreen').classList.remove('hidden');
   $('topbar').classList.add('hidden'); $('bottom').classList.add('hidden'); $('touchBar').classList.add('hidden'); $('placeBar').classList.add('hidden');
@@ -7469,6 +7576,7 @@ function beginSession() {
   layoutUI(); tryFullscreen();
   updateDiffUI();
   paused = false; running = true; acc = 0;
+  chatReset(G.net);
   $('btnSaveMenu').classList.toggle('hidden', G.net); $('btnLoadMenu').classList.toggle('hidden', G.net); $('btnSaveLater').classList.toggle('hidden', !G.net);
   G.nextAutosave = G.time + AUTOSAVE_EVERY;
 }

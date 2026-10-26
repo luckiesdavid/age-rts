@@ -745,6 +745,14 @@ const UNITS = {
     cost: { food: 120, gold: 90 }, time: 24, pop: 1, cls: 'inf', heavy: true, radius: 0.24, bonus: { cav: 8, siege: 10 }, age: 2,
     resist: { melee: 0.6, pierce: 0.55 }, military: true,
     desc: 'Burgeinheit. Langsame, schwer gepanzerte Elite-Infanterie mit Zweihänder. Hält enorm viel aus und schlägt auch Reiter.' },
+  onager: { name: 'Onager', hp: 170, speed: 0.8, atk: 20, atkBld: 70, atkType: 'siege', range: 10, minRange: 3, cd: 6, sight: 11,
+    cost: { wood: 200, gold: 180 }, time: 32, pop: 3, cls: 'siege', radius: 0.4, splash: 1.8, age: 2,
+    resist: { pierce: 0.45, melee: 1.2 }, projectile: 'stone', military: true, siege: true,
+    desc: 'Burgeinheit. Schweres Katapult mit großer Reichweite und breitem Flächenschaden gegen Gruppen, Gebäude und Mauern. Mindestreichweite, schwach gegen Reiter.' },
+  ballista: { name: 'Balliste', hp: 140, speed: 0.95, atk: 16, atkType: 'pierce', range: 8.5, minRange: 1.5, cd: 3.4, sight: 10,
+    cost: { wood: 150, gold: 100 }, time: 26, pop: 2, cls: 'siege', radius: 0.36, bonus: { siege: 45, heavy: 8 }, age: 2,
+    resist: { pierce: 0.5, melee: 1.2 }, projectile: 'bolt', military: true, siege: true,
+    desc: 'Burgeinheit. Riesenarmbrust: schießt schwere Bolzen, zerstört Belagerungswaffen und durchschlägt Rüstungen. Mindestreichweite.' },
   deer: { name: 'Hirsch', hp: 20, speed: 1.3, atk: 0, atkType: 'melee', range: 0, cd: 9, sight: 4, cost: {}, time: 0, pop: 0,
     cls: 'deer', radius: 0.25, gaia: true, desc: 'Wild. Dorfbewohner können es jagen (Nahrung).' },
 };
@@ -788,8 +796,8 @@ const BUILDINGS = {
     resist: { melee: 0.05, pierce: 0.015, siege: 0.85 }, desc: 'Wehrturm. Schießt drei Pfeile gleichzeitig und hält lange stand. Bis zu 6 Einheiten finden darin Schutz.' },
   // Burg wie in Age of Empires: Besatzung (garrison) schießt mit und heilt, bildet Burgeinheiten und Triboks aus
   castle: { name: 'Burg', w: 4, h: 4, hp: 5500, cost: { wood: 200, stone: 800 }, time: 160, attack: { dmg: 11, range: 9, cd: 1.3, n: 4 }, age: 2, garrison: 12,
-    trains: ['longbow', 'ordensritter', 'trebuchet'], techs: ['hoardings', 'firearrows'], resist: { melee: 0.05, pierce: 0.015, siege: 0.8 },
-    desc: 'Burg wie in Age of Empires. Schießt vier Pfeile, bis zu 12 Einheiten finden darin Schutz (je zwei ein Pfeil mehr, Verwundete heilen). Bildet Langbogenschützen, Ordensritter und Triboks aus.' },
+    trains: ['longbow', 'ordensritter', 'onager', 'ballista', 'trebuchet'], techs: ['hoardings', 'firearrows'], resist: { melee: 0.05, pierce: 0.015, siege: 0.8 },
+    desc: 'Burg wie in Age of Empires. Schießt vier Pfeile, bis zu 12 Einheiten finden darin Schutz (je zwei ein Pfeil mehr, Verwundete heilen). Bildet Langbogenschützen, Ordensritter, Onager, Ballisten und Triboks aus.' },
   palisade: { name: 'Palisade', w: 1, h: 1, hp: 300, cost: { wood: 3 }, time: 3, wall: true, line: true, age: 0,
     resist: { melee: 0.3, pierce: 0.02, siege: 1.2 }, desc: 'Billige Holzmauer. Ziehen, um eine Linie zu bauen. Kosten pro Segment.' },
   pgate: { name: 'Palisadentor', w: 1, h: 1, hp: 450, cost: { wood: 25 }, time: 8, wall: true, gate: true, age: 0,
@@ -806,7 +814,8 @@ const BUILDINGS = {
   lm_treasury: { name: 'Schatzkammer', w: 3, h: 3, hp: 3500, cost: AGES[2].cost, time: 150, landmark: 2, resist: LM_RES, drop: ['gold', 'stone'],
     eff: { trickle: 1.5 }, desc: 'Wahrzeichen der Burgzeit. Bringt laufend 1,5 Gold pro Sekunde, Lager für Gold und Stein.' },
   lm_fort: { name: 'Wehrburg', w: 4, h: 4, hp: 5000, cost: AGES[2].cost, time: 150, landmark: 2, resist: LM_RES,
-    attack: { dmg: 12, range: 9, cd: 1.4, n: 4 }, desc: 'Wahrzeichen der Burgzeit. Sehr widerstandsfähig, schießt vier Pfeile gleichzeitig.' },
+    attack: { dmg: 12, range: 9, cd: 1.4, n: 4 }, garrison: 10, trains: ['longbow', 'ordensritter', 'ballista'],
+    desc: 'Wahrzeichen der Burgzeit. Sehr widerstandsfähig, schießt vier Pfeile gleichzeitig, bis zu 10 Einheiten finden darin Schutz. Bildet Langbogenschützen, Ordensritter und Ballisten aus.' },
   lm_cathedral: { name: 'Dom', w: 4, h: 4, hp: 4500, cost: AGES[3].cost, time: 200, landmark: 3, resist: LM_RES,
     eff: { heal: 2 }, desc: 'Wahrzeichen der Imperialzeit. Heilt eigene Einheiten in der Nähe (2 LP pro Sekunde).' },
   lm_academy: { name: 'Kriegsakademie', short: 'Akademie', w: 4, h: 4, hp: 4500, cost: AGES[3].cost, time: 200, landmark: 3, resist: LM_RES,
@@ -1456,6 +1465,13 @@ function orderAttack(u, t) {
   clearOrder(u);
   u.order = { t: 'attack', target: t };
 }
+// Bewachen: Militär folgt einer eigenen oder verbündeten Einheit und bekämpft Feinde in ihrer Nähe
+function canEscort(u, w) { return !!w && !w.dead && w.kind === 'unit' && w !== u && !w.def.gaia && allies(u.owner, w.owner); }
+function orderEscort(u, w) {
+  if (!u.def.military || !canEscort(u, w)) return;
+  clearOrder(u);
+  u.order = { t: 'escort', target: w, rt: -99, gx: w.x, gy: w.y };
+}
 function orderGather(u, r) {
   if (u.type !== 'villager') return;
   clearOrder(u);
@@ -1709,7 +1725,7 @@ function applyDamage(t, amount, src, by) {
   t.hp -= amount;
   // Angriffsmeldung (nur Anzeige und Ton, verändert den Spielzustand nicht)
   if (G.onHit && t.owner < GAIA) { const o = src ? src.owner : by; if (o !== undefined && o !== t.owner && !allies(o, t.owner)) G.onHit(t, o); }
-  if (t.kind === 'unit' && src && alive(src)) t.lastAttacker = src;
+  if (t.kind === 'unit' && src && alive(src)) { t.lastAttacker = src; t.hitBy = src; t.hitT = G.time; }
   if (t.kind === 'bld' && src && src.owner < GAIA) t.lastHit = G.time;
   if (t.hp <= 0) {
     const o = src ? src.owner : by;
@@ -1951,6 +1967,7 @@ function updateUnit(u, dt) {
     if (!canTarget(u, o.target)) { u.order = null; u.target = null; u.aggr = false; stopMoving(u); }
     else { engage(u, o.target, dt, true); return; }
   }
+  if (o && o.t === 'escort') { updateEscort(u, o, dt, combat); return; }
   if (o && o.t === 'move') {
     const st = followPath(u, dt);
     if (st === 'blocked') { u.path = null; requestPath(u, goalForPoint(o.x, o.y)); }
@@ -1992,6 +2009,64 @@ function updateUnit(u, dt) {
   }
   // untätig
   if (!o && u.path) { if (followPath(u, dt) === 'done') stopMoving(u); }
+}
+// Bewertung eines Feindes für einen Wächter: wer die bewachte Einheit angreift und nah an ihr ist, zuerst;
+// Ziele, die schon andere Wächter bekämpfen, weniger, damit sich die Wächter auf die Angreifer verteilen
+function escortScore(u, w, t, gx, gy) {
+  if (t.kind !== 'unit') return targetPriority(u, t) * 10 - dist(u.x, u.y, t.x, t.y) - 25;
+  let s = targetPriority(u, t) * 10 - dist(t.x, t.y, gx, gy) * 1.5 - dist(u.x, u.y, t.x, t.y) * 0.5;
+  if ((t.order && t.order.t === 'attack' && t.order.target === w) || t.target === w) s += 12;
+  let n = 0;
+  queryUnits(t.x, t.y, 6, o => { if (o !== u && o.target === t && o.order && o.order.t === 'escort' && o.order.target === w) n++; });
+  return s - n * 6;
+}
+function escortScan(u, w, gx, gy) {
+  let best = null, bs = -1e9;
+  const minR = u.def.minRange || 0;
+  if (!u.def.bldOnly) {
+    queryUnits(gx, gy, ESCORT_R, t => {
+      if (!canTarget(u, t) || dist(u.x, u.y, t.x, t.y) < minR) return;
+      const s = escortScore(u, w, t, gx, gy);
+      if (s > bs) { bs = s; best = t; }
+    });
+  }
+  if (!best && (u.def.bldOnly || u.def.siege)) { const b = scanForTarget(u, Math.min(u.def.sight, ESCORT_R), true); if (b) { best = b; bs = escortScore(u, w, b, gx, gy); } }
+  return best ? { t: best, s: bs } : null;
+}
+const ESCORT_R = 7;      // Umkreis um die bewachte Einheit, in dem Feinde bekämpft werden
+const ESCORT_LEASH = 11; // weiter entfernt sich der Wächter beim Verfolgen nicht von ihr
+function updateEscort(u, o, dt, combat) {
+  const w = o.target;
+  if (!canEscort(u, w)) { u.order = null; u.target = null; stopMoving(u); u.guard = { x: u.x, y: u.y }; return; }
+  // sitzt die bewachte Einheit in einem Gebäude, wird dieses bewacht
+  const b = w.inside, gx = b ? b.x : w.x, gy = b ? b.y : w.y;
+  const near = (e, r) => dist(e.x, e.y, gx, gy) <= r + (e.kind === 'bld' ? Math.max(e.w, e.h) / 2 : 0);
+  if (combat) {
+    if (u.target && !inAttackRange(u, u.target) && (dist(u.x, u.y, gx, gy) > ESCORT_LEASH || !near(u.target, ESCORT_R + 2))) u.target = null;
+    if (!u.target) {
+      // zuerst, wer die bewachte Einheit gerade angreift, dann wer einen selbst angreift
+      const a = w.hitBy && G.time - w.hitT < 3 ? w.hitBy : null;
+      if (a && canTarget(u, a) && (a.kind === 'unit' || u.def.siege) && near(a, ESCORT_R + 2)) u.target = a;
+      else if (u.lastAttacker && canTarget(u, u.lastAttacker) && near(u.lastAttacker, ESCORT_R + 2)) u.target = u.lastAttacker;
+      u.lastAttacker = null;
+    }
+    u.scanT -= dt;
+    if (u.scanT <= 0) {
+      u.scanT = 0.45 + rnd() * 0.15;
+      const t = escortScan(u, w, gx, gy);
+      if (t && (!u.target || t.s > escortScore(u, w, u.target, gx, gy) + 3)) u.target = t.t;
+    }
+    if (u.target) { engage(u, u.target, dt, false); return; }
+  }
+  // folgen: nachplanen, wenn die bewachte Einheit ein Stück weitergezogen ist
+  const d = dist(u.x, u.y, gx, gy), reach = b ? Math.max(b.w, b.h) / 2 + 1.2 : 1.8;
+  if (d <= reach) { if (u.pathTarget === w) stopMoving(u); return; }
+  const moved = dist(o.gx, o.gy, gx, gy) > 1.5;
+  if (!u.pending && ((u.pathTarget !== w && G.time - o.rt > 0.3) || (!u.path && G.time - o.rt > 0.5) || (moved && G.time - o.rt > 0.8))) {
+    o.rt = G.time; o.gx = gx; o.gy = gy; u.pathTarget = w;
+    requestPath(u, b ? goalForRect(b.tx, b.ty, b.w, b.h, 1.2) : goalForRect(gx, gy, 0, 0, 1.2));
+  }
+  if (followPath(u, dt) === 'blocked') u.path = null;
 }
 function combatResponseVillager(u) { u.lastAttacker = null; return false; }
 
@@ -2378,10 +2453,10 @@ function wallLine(x0, y0, x1, y1) {
 /* ============================ 7. KAMPF & SPIELABLAUF ============================ */
 function spawnProjectile(kind, src, x, y, z, target, tx, ty, def) {
   const d = dist(x, y, tx, ty);
-  const speed = kind === 'stone' ? 7 : kind === 'bullet' ? 24 : 13;
+  const speed = kind === 'stone' ? 7 : kind === 'bullet' ? 24 : kind === 'bolt' ? 17 : 13;
   G.projectiles.push({
     kind, owner: src.owner, x0: x, y0: y, z0: z, x, y, z, tx, ty, target, def, t: 0, dur: Math.max(0.15, d / speed),
-    arc: kind === 'stone' ? 1.2 + d * 0.22 : kind === 'bullet' ? 0.1 : 0.35 + d * 0.06, src,
+    arc: kind === 'stone' ? 1.2 + d * 0.22 : kind === 'bullet' ? 0.1 : kind === 'bolt' ? 0.2 + d * 0.03 : 0.35 + d * 0.06, src,
   });
 }
 function updateProjectiles(dt) {
@@ -2390,7 +2465,7 @@ function updateProjectiles(dt) {
     const p = ps[k];
     p.t += dt;
     // Pfeile verfolgen bewegliche Ziele leicht
-    if ((p.kind === 'arrow' || p.kind === 'bullet') && alive(p.target) && p.target.kind === 'unit') { p.tx += (p.target.x - p.tx) * 0.15; p.ty += (p.target.y - p.ty) * 0.15; }
+    if ((p.kind === 'arrow' || p.kind === 'bullet' || p.kind === 'bolt') && alive(p.target) && p.target.kind === 'unit') { p.tx += (p.target.x - p.tx) * 0.15; p.ty += (p.target.y - p.ty) * 0.15; }
     const f = Math.min(1, p.t / p.dur);
     p.x = p.x0 + (p.tx - p.x0) * f; p.y = p.y0 + (p.ty - p.y0) * f;
     p.z = p.z0 * (1 - f) + Math.sin(f * Math.PI) * p.arc;
@@ -2627,6 +2702,13 @@ function execAct(p, c) {
     const cant = units.filter(u => !(u.order && u.order.t === 'attack'));
     if (cant.length) groupMove(cant, target.x, target.y, false);
     return;
+  }
+  // eigene oder verbündete Einheit: Militär bewacht sie
+  if (target && target.kind === 'unit' && !target.def.gaia && allies(p, target.owner)) {
+    const guards = units.filter(u => u.def.military && canEscort(u, target));
+    for (const u of guards) orderEscort(u, target);
+    units = units.filter(u => guards.indexOf(u) < 0);
+    if (!units.length) return;
   }
   // Eigene Burg / eigener Bergfried: hineingehen (Dorfbewohner reparieren zuerst, falls beschädigt)
   // Turm / Steinmauer / Steintor: Fernkämpfer beziehen oben Stellung, auf Mauern verteilt auf die Nachbarstücke
@@ -3125,7 +3207,8 @@ function aiMilitary(ai) {
   const w = { spear: 1 + e.cav * 0.35, maa: 1 + e.ranged * 0.25 + e.lightInf * 0.2,
     archer: 1 + e.lightInf * 0.35, crossbow: 0.7 + e.heavy * 0.45, handcannon: 0.9 + e.heavy * 0.2,
     horseman: 0.8 + e.ranged * 0.35 + e.siege * 0.6, knight: 1 + e.ranged * 0.2 + e.lightInf * 0.15 - Math.min(0.6, e.spear * 0.1),
-    longbow: 0.9 + e.lightInf * 0.3 + e.siege * 0.2, ordensritter: 0.7 + e.cav * 0.25 + e.lightInf * 0.15 };
+    longbow: 0.9 + e.lightInf * 0.3 + e.siege * 0.2, ordensritter: 0.7 + e.cav * 0.25 + e.lightInf * 0.15,
+    onager: 0.25 + e.lightInf * 0.06 + e.ranged * 0.06, ballista: 0.15 + e.siege * 0.5 };
   // Wirtschaft hat Vorrang, solange wenig Dorfbewohner; beim Sparen fürs Zeitalter Nahrung und Gold zurückhalten
   const ecoFirst = vills < Math.min(ai.d.vills, 12) && t < 300;
   const reserve = { food: ecoFirst ? 50 : 0, wood: 0, gold: 0, stone: 0 };
@@ -3158,7 +3241,7 @@ function aiMilitary(ai) {
     }
     return { ut: best, v: bv };
   };
-  const blds = aiBlds(ai).filter(b => b.type === 'barracks' || b.type === 'range' || b.type === 'stable' || b.type === 'castle');
+  const blds = aiBlds(ai).filter(b => b.type === 'barracks' || b.type === 'range' || b.type === 'stable' || b.type === 'castle' || b.type === 'lm_fort');
   // leichte Stufen: Heeresgröße begrenzen (lebende plus in Ausbildung) und erst später mit Militär beginnen
   let mil = aiUnits(ai, u => u.def.military).length;
   for (const b of blds) mil += b.queue.length;
@@ -4658,6 +4741,37 @@ function drawUnitShape(c, u, sx, sy, z, owner, type, facing, anim, moving, atk, 
       c.strokeStyle = 'rgba(50,30,15,.5)'; c.lineWidth = 0.6; for (let k = -13; k < 12; k += 4) { c.beginPath(); c.moveTo(k, -12); c.lineTo(k + 2.5, -23); c.stroke(); }
       break;
     }
+    case 'onager': { // Onager: schweres Katapult, Spannrahmen mit Seilbündel, Schleuder statt Löffel
+      for (const x of [-13, 12]) { c.fillStyle = '#3a2614'; c.beginPath(); c.arc(x, -4.2, 4.2, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#7a5530'; c.lineWidth = 0.8; c.beginPath(); c.moveTo(x - 3.4, -4.2); c.lineTo(x + 3.4, -4.2); c.moveTo(x, -7.6); c.lineTo(x, -0.8); c.stroke(); }
+      c.fillStyle = '#6a4626'; c.fillRect(-17, -11, 33, 6); c.strokeStyle = OL; c.lineWidth = 0.6; c.strokeRect(-17, -11, 33, 6);
+      c.fillStyle = pc.main; c.fillRect(-16, -11, 7, 3); c.fillRect(8, -11, 7, 3);
+      // Querbalken (Anschlag) und Seilbündel
+      c.strokeStyle = '#5a3a1e'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(4, -11); c.lineTo(9, -27); c.moveTo(12, -11); c.lineTo(9, -27); c.stroke();
+      c.fillStyle = '#7a5530'; c.fillRect(5, -29, 8, 3.5); c.strokeRect(5, -29, 8, 3.5);
+      c.fillStyle = '#c8b07a'; c.beginPath(); c.ellipse(-5, -9.5, 3, 4, 0, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#8a6a3a'; c.lineWidth = 0.6; c.stroke();
+      const armO = atk > 0 ? -1.5 + clamp((0.35 - atk) / 0.35, 0, 1) * 1.5 : 0.62;
+      c.save(); c.translate(-5, -10); c.rotate(-Math.PI / 2 + armO);
+      c.strokeStyle = '#4a2f1a'; c.lineWidth = 2.8; c.beginPath(); c.moveTo(0, 1); c.lineTo(0, -22); c.stroke();
+      c.strokeStyle = 'rgba(70,50,30,.9)'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(0, -22); c.lineTo(-3, -26); c.lineTo(2, -27); c.lineTo(0, -22); c.stroke();
+      if (!(u && u.cd > u.def.cd - 1.2)) { c.fillStyle = '#8d877c'; c.beginPath(); c.arc(-0.5, -26.5, 2.6, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+      break;
+    }
+    case 'ballista': { // Balliste: große Armbrust auf Radgestell
+      for (const x of [-9, 8]) { c.fillStyle = '#3a2614'; c.beginPath(); c.arc(x, -3.4, 3.4, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#7a5530'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(x - 2.8, -3.4); c.lineTo(x + 2.8, -3.4); c.moveTo(x, -6.2); c.lineTo(x, -0.6); c.stroke(); }
+      c.fillStyle = '#7a5530'; c.fillRect(-12, -9, 23, 4.5); c.strokeStyle = OL; c.lineWidth = 0.6; c.strokeRect(-12, -9, 23, 4.5);
+      c.fillStyle = pc.main; c.fillRect(-11, -9, 5, 2.6);
+      c.strokeStyle = '#5a3a1e'; c.lineWidth = 2; c.beginPath(); c.moveTo(-1, -9); c.lineTo(0, -15); c.moveTo(3, -9); c.lineTo(1, -15); c.stroke();
+      // Schaft und Bogen
+      c.fillStyle = '#6a4626'; c.save(); c.translate(0, -16); c.rotate(-0.12);
+      c.fillRect(-11, -1.6, 24, 3.2); c.strokeRect(-11, -1.6, 24, 3.2);
+      c.strokeStyle = '#3a2a19'; c.lineWidth = 2; c.beginPath(); c.moveTo(9, -9); c.quadraticCurveTo(14, 0, 9, 9); c.stroke();
+      const pull = atk > 0 ? 0 : 6;
+      c.strokeStyle = 'rgba(240,235,215,.9)'; c.lineWidth = 0.6; c.beginPath(); c.moveTo(9, -9); c.lineTo(9 - pull, 0); c.lineTo(9, 9); c.stroke();
+      if (!(u && u.cd > u.def.cd - 1)) { c.strokeStyle = '#4a3420'; c.lineWidth = 1.3; c.beginPath(); c.moveTo(9 - pull, 0); c.lineTo(17, 0); c.stroke(); c.fillStyle = '#6e737a'; c.beginPath(); c.moveTo(19, 0); c.lineTo(16.5, -1.5); c.lineTo(16.5, 1.5); c.closePath(); c.fill(); }
+      c.restore();
+      break;
+    }
     case 'catapult': {
       for (const x of [-10, 9]) { c.fillStyle = '#3a2614'; c.beginPath(); c.arc(x, -3.8, 3.8, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#7a5530'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(x - 3, -3.8); c.lineTo(x + 3, -3.8); c.moveTo(x, -6.8); c.lineTo(x, -0.8); c.stroke(); }
       c.fillStyle = '#7a5530'; c.fillRect(-14, -10, 27, 5); c.strokeStyle = OL; c.lineWidth = 0.6; c.strokeRect(-14, -10, 27, 5);
@@ -4694,7 +4808,7 @@ function unitSprite(u, task) {
   const mv = u.moving ? 1 + (((u.anim * 10 / (Math.PI / 4)) | 0) & 7) : 0;
   const sw = u.atkAnim > 0 ? 1 + Math.min(5, ((0.35 - u.atkAnim) / 0.35 * 6) | 0) : 0;
   const carry = u.carry > 0 ? u.carryType : '';
-  const loaded = (u.type === 'catapult' && u.cd > u.def.cd - 1) || (u.type === 'trebuchet' && u.cd > u.def.cd - 1.5) ? 1 : 0;
+  const loaded = ((u.type === 'catapult' || u.type === 'ballista') && u.cd > u.def.cd - 1) || (u.type === 'onager' && u.cd > u.def.cd - 1.2) || (u.type === 'trebuchet' && u.cd > u.def.cd - 1.5) ? 1 : 0;
   const key = 'u_' + u.type + u.owner + flip + mv + '_' + sw + (u.type === 'villager' ? task + carry : '') + loaded;
   let spr = SPRITES[key];
   if (spr) return spr;
@@ -4708,7 +4822,7 @@ function unitSprite(u, task) {
   SPRITES[key] = spr;
   return spr;
 }
-const UNIT_H = { horseman: 32, scout: 31, knight: 34, ram: 25, catapult: 26, trebuchet: 38, deer: 20 };
+const UNIT_H = { horseman: 32, scout: 31, knight: 34, ram: 25, catapult: 26, onager: 30, ballista: 24, trebuchet: 38, deer: 20 };
 function unitHeight(type) { return UNIT_H[type] || 28; }
 
 /* ---------- Icons für die Befehlsleiste ---------- */
@@ -4915,8 +5029,10 @@ function render() {
       const nx = p.x0 + (p.tx - p.x0) * f2, ny = p.y0 + (p.ty - p.y0) * f2, nz = p.z0 * (1 - f2) + Math.sin(f2 * Math.PI) * p.arc;
       const s2 = w2s(nx, ny, nz * 22);
       let dx = s2.x - s.x, dy = s2.y - s.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
-      ctx.strokeStyle = '#3a2a19'; ctx.lineWidth = 1.3 * z; ctx.beginPath(); ctx.moveTo(s.x - dx * 7 * z, s.y - dy * 7 * z); ctx.lineTo(s.x + dx * 4 * z, s.y + dy * 4 * z); ctx.stroke();
-      ctx.fillStyle = '#eee'; ctx.fillRect(s.x - dx * 7 * z - 1, s.y - dy * 7 * z - 1, 2, 2);
+      const bl = p.kind === 'bolt' ? 1.6 : 1; // Ballistenbolzen: länger und dicker, eiserne Spitze
+      ctx.strokeStyle = '#3a2a19'; ctx.lineWidth = 1.3 * z * bl; ctx.beginPath(); ctx.moveTo(s.x - dx * 7 * z * bl, s.y - dy * 7 * z * bl); ctx.lineTo(s.x + dx * 4 * z * bl, s.y + dy * 4 * z * bl); ctx.stroke();
+      if (bl > 1) { ctx.fillStyle = '#6e737a'; ctx.beginPath(); ctx.arc(s.x + dx * 6.4 * z, s.y + dy * 6.4 * z, 1.6 * z, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = '#eee'; ctx.fillRect(s.x - dx * 7 * z * bl - 1, s.y - dy * 7 * z * bl - 1, 2, 2);
     }
   }
   // Effekte oben
@@ -4931,9 +5047,20 @@ function render() {
       ctx.globalAlpha = 1;
     } else if (e.type === 'order') {
       const s = w2s(e.x, e.y); const f = e.t / e.dur;
-      ctx.strokeStyle = e.ref === 'attack' ? 'rgba(255,90,70,' + (1 - f) + ')' : 'rgba(150,255,130,' + (1 - f) + ')'; ctx.lineWidth = 2;
+      ctx.strokeStyle = e.ref === 'attack' ? 'rgba(255,90,70,' + (1 - f) + ')' : e.ref === 'guard' ? 'rgba(120,190,255,' + (1 - f) + ')' : 'rgba(150,255,130,' + (1 - f) + ')'; ctx.lineWidth = 2;
       const r = (10 - f * 6) * z; ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
     }
+  }
+  // von ausgewählten Einheiten bewachte Einheiten: blauer Ring
+  const guarded = new Set();
+  for (const e of UI.sel) if (e.kind === 'unit' && !e.dead && e.order && e.order.t === 'escort' && e.order.target && !e.order.target.dead) guarded.add(e.order.target.inside || e.order.target);
+  if (guarded.size) {
+    ctx.strokeStyle = 'rgba(120,190,255,0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([4 * z, 3 * z]);
+    for (const g of guarded) {
+      const p = g.kind === 'unit' ? lerpPos(g) : g, s = w2s(p.x, p.y), r = (g.kind === 'unit' ? 13 : 10 + Math.max(g.w, g.h) * 14) * z;
+      ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.setLineDash([]);
   }
   // Lebensbalken
   for (const it of drawList) {
@@ -5258,7 +5385,7 @@ const BUILD_GROUPS = {
 // Tastenkürzel meiden W/A/S/D (Kamera)
 const BUILD_KEYS = { house: 'Q', mill: 'E', lumber: 'R', mining: 'F', farm: 'T', market: 'C', tc: 'G', barracks: 'Q', range: 'E', stable: 'R', siege: 'F', blacksmith: 'T',
   palisade: 'Q', pgate: 'E', wall: 'R', sgate: 'F', tower: 'T', keep: 'G', castle: 'C', lm_market: 'Q', lm_school: 'E', lm_treasury: 'R', lm_fort: 'F', lm_cathedral: 'T', lm_academy: 'G' };
-const TRAIN_KEYS = ['Q', 'E', 'R', 'F'];
+const TRAIN_KEYS = ['Q', 'E', 'R', 'F', 'C']; // C nur bei der Burg (5 Einheiten, 2 Technologien)
 const TECH_KEYS = ['T', 'G', 'C', 'V'];
 const MKT_KEYS = ['Q', 'E', 'R', 'F', 'T', 'G'];
 const lockHtml = why => why ? `<div style="color:#ffb0a0;margin-top:3px">${why}</div>` : '';
@@ -5314,6 +5441,7 @@ function refreshCommands() {
   if (units.length && !UI.buildMenu) {
     const combat = units.some(u => u.def.military);
     if (combat) box.appendChild(cmdButton({ text: 'Angriffs-\nbewegung', hotkey: 'A', active: UI.cmdMode === 'amove', tip: () => '<div class="tt">Angriffsbewegung (A)</div>Zum Ziel bewegen und unterwegs alle Feinde angreifen. Danach auf die Karte klicken.', onClick: () => { UI.cmdMode = 'amove'; refreshCommands(); } }));
+    if (combat) box.appendChild(cmdButton({ text: 'Bewachen', hotkey: 'G', active: UI.cmdMode === 'escort', tip: () => '<div class="tt">Bewachen (G)</div>Eine eigene oder verbündete Einheit begleiten und Feinde in ihrer Nähe angreifen. Danach die Einheit anklicken.' + (IS_TOUCH ? '' : '<br><i>Auch per Rechtsklick auf die Einheit.</i>'), onClick: () => { UI.cmdMode = 'escort'; refreshCommands(); } }));
     box.appendChild(cmdButton({ text: 'Halt', hotkey: 'X', tip: () => '<div class="tt">Halt (X)</div>Alle Befehle abbrechen.', onClick: () => issue({ c: 'stop', ids: selOwnUnits().map(u => u.id) }) }));
     box.appendChild(cmdButton({ text: 'Löschen', hotkey: 'Entf', tip: () => '<div class="tt">Einheit entlassen (Entf)</div>Ausgewählte Einheiten werden entfernt.', onClick: () => deleteSelection() }));
   }
@@ -5428,7 +5556,8 @@ function refreshPanel(force) {
         if (e.carry) state += ` (trägt ${e.carry} ${RES_DE[e.carryType]})`;
         if (e.idleNoDrop) state += ' – kein Lager vorhanden!';
       } else if (!d.gaia) {
-        state = e.target ? 'Kämpft' : o ? (o.t === 'amove' ? 'Angriffsbewegung' : o.t === 'attack' ? 'Greift an' : 'Unterwegs') : 'Bereit';
+        state = e.target ? 'Kämpft' : o ? (o.t === 'amove' ? 'Angriffsbewegung' : o.t === 'attack' ? 'Greift an' : o.t === 'escort' ? 'Bewacht ' + o.target.def.name : 'Unterwegs') : 'Bereit';
+        if (e.target && o && o.t === 'escort') state += ' (bewacht ' + o.target.def.name + ')';
       }
       info.innerHTML = `<div class="selTitle"><img src="${ICONS[e.type]}">${d.name}</div>
         <div class="hpbar"><div style="width:${e.hp / e.maxHp * 100}%"></div></div>
@@ -5799,11 +5928,19 @@ function commandAt(sx, sy, attackMove) {
   // Markierung sofort anzeigen (im Mehrspieler kommt die Ausführung leicht verzögert)
   const units = own.filter(e => e.kind === 'unit');
   const enemy = target && target.owner !== undefined && foes(G.human, target.owner);
+  if (target && target.kind === 'unit' && !target.def.gaia && allies(G.human, target.owner) && units.some(u => u.def.military && u !== target)) { addEffect('order', target.x, target.y, 'guard'); return; }
   const onTarget = target && units.some(u => u.type === 'villager') && (target.kind === 'res' || target.type === 'deer' || (target.kind === 'bld' && target.owner === G.human));
   if (!units.length) { if (own.some(e => e.kind === 'bld' && BUILDINGS[e.type].trains)) addEffect('order', w.x, w.y, 'move'); }
   else if (attackMove) addEffect('order', w.x, w.y, 'attack');
   else if (enemy) addEffect('order', target.x, target.y, 'attack');
   else addEffect('order', onTarget ? target.x : w.x, onTarget ? target.y : w.y, 'move');
+}
+// Bewachen-Modus: nur eine eigene oder verbündete Einheit ist ein gültiges Ziel
+function escortAt(sx, sy) {
+  const t = pickAt(sx, sy);
+  if (!(t && t.kind === 'unit' && !t.def.gaia && allies(G.human, t.owner) && selOwnUnits().some(u => u.def.military && u !== t))) { notifyLocal('Wähle eine eigene oder verbündete Einheit zum Bewachen.'); return false; }
+  commandAt(sx, sy, false);
+  return true;
 }
 // Spielzustand ändern: im Einzelspieler sofort, im Mehrspieler über den Lockstep
 function issue(cmd) {
@@ -5851,6 +5988,7 @@ function setupInput() {
       else commitPlacing(e.shiftKey);
       return;
     }
+    if (UI.cmdMode === 'escort') { if (escortAt(e.clientX, e.clientY) && !e.shiftKey) UI.cmdMode = null; refreshCommands(); return; }
     if (UI.cmdMode === 'amove' || INPUT.keys.has('a') && selOwnUnits().some(u => u.def.military)) {
       commandAt(e.clientX, e.clientY, true);
       if (!e.shiftKey) UI.cmdMode = null; refreshCommands();
@@ -6872,8 +7010,11 @@ function touchToggle(t) {
 }
 function touchTap(x, y) {
   if (UI.cmdMode === 'amove') { commandAt(x, y, true); UI.cmdMode = null; refreshCommands(); return; }
-  const t = pickAt(x, y), d = dblTarget(t, x, y, false);
-  if (d && d.owner === G.human) { selectSameOnScreen(d, TOUCH.multi); return; }
+  if (UI.cmdMode === 'escort') { if (escortAt(x, y)) UI.cmdMode = null; refreshCommands(); return; }
+  const t = pickAt(x, y), now = performance.now();
+  const dbl = t && now - TOUCH.lastTapT < 350 && TOUCH.lastTapId === t.id;
+  TOUCH.lastTapT = now; TOUCH.lastTapId = t ? t.id : null;
+  if (dbl && t.owner === G.human && (t.kind === 'unit' || t.kind === 'bld')) { selectSameOnScreen(t); return; }
   if (TOUCH.multi) { touchToggle(t); return; }
   const own = UI.sel.filter(e => e.owner === G.human && !e.dead);
   const canOrder = own.some(e => e.kind === 'unit' || (e.kind === 'bld' && BUILDINGS[e.type].trains));

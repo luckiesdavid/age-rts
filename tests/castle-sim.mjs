@@ -44,9 +44,10 @@ const plan = {
   4200: G => [0, 1].flatMap(p => { const b = castleOf(G, p); return b ? [{ p, c: { c: 'act', ids: own(G, p).map(u => u.id), x: b.x, y: b.y, t: b.id } }] : []; }),
   5400: G => [{ p: 0, c: { c: 'ungar', id: castleOf(G, 0).id } }],
   5700: G => { const b = castleOf(G, 0); return [{ p: 0, c: { c: 'act', ids: own(G, 0).map(u => u.id), x: b.x, y: b.y, t: b.id } }, { p: 0, c: { c: 'res', id: b.id, tech: 'hoardings' } }]; },
+  7300: G => { const b = castleOf(G, 0); return [{ p: 0, c: { c: 'train', ids: [b.id], type: 'onager', n: 1 } }, { p: 0, c: { c: 'train', ids: [b.id], type: 'ballista', n: 1 } }]; },
 };
 let garMax = 0, garAtSave = 0;
-for (let tick = 1; tick <= 10500; tick++) {
+for (let tick = 1; tick <= 12000; tick++) {
   const cmds = plan[tick] ? plan[tick](worlds[0]) : [];
   for (const G of worlds) {
     A.G = G;
@@ -84,6 +85,7 @@ check(G.players[0].techs.firearrows && G.players[0].towerAtk === 3, 'Brandpfeile
 const c0 = castleOf(G, 0);
 check(G.players[0].techs.hoardings && Math.abs(c0.maxHp - 5500 * 1.25) < 1e-6, 'Wehrgänge: Burg hat +25 % LP');
 check(own(G, 0, u => u.type === 'longbow').length + c0.gar.filter(u => u.type === 'longbow').length === 5, 'Langbogenschützen ausgebildet');
+check(['onager', 'ballista'].every(t => own(G, 0, u => u.type === t).length === 1), 'Onager und Balliste in der Burg ausgebildet');
 check(G.units.length === new Set(G.units).size, 'keine doppelten Einheiten');
 const h = worlds.map(w => { A.G = w; return A.stateHash(); });
 check(h[0] === h[1], `Welten identisch (Prüfsummen ${h[0]} / ${h[1]})`);
